@@ -1,4 +1,5 @@
 #include "likedpage.h"
+#include "lang.h"
 #include <QLabel>
 #include <QPushButton>
 #include <QHBoxLayout>
@@ -67,17 +68,17 @@ void LikedPage::refresh(int currentTrackId, bool isPlaying) {
     auto *infoLayout = new QVBoxLayout();
     infoLayout->addStretch();
 
-    auto *typeLabel = new QLabel("COLEÇÃO");
+    auto *typeLabel = new QLabel(Lang::tr("COLEÇÃO"));
     typeLabel->setFont(Theme::bodyFont(10));
     typeLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;").arg(Theme::textMuted().name()));
     infoLayout->addWidget(typeLabel);
 
-    auto *nameLabel = new QLabel("Curtidas");
+    auto *nameLabel = new QLabel(Lang::tr("Curtidas"));
     nameLabel->setFont(Theme::titleFont(32));
     nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
     infoLayout->addWidget(nameLabel);
 
-    auto *countLabel = new QLabel(QString("%1 faixa%2")
+    auto *countLabel = new QLabel(QString(Lang::tr("%1 faixa%2"))
         .arg(liked.size()).arg(liked.size() != 1 ? "s" : ""));
     countLabel->setFont(Theme::bodyFont(12));
     countLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
@@ -93,7 +94,7 @@ void LikedPage::refresh(int currentTrackId, bool isPlaying) {
     m_contentLayout->addSpacing(16);
 
     if (liked.isEmpty()) {
-        auto *emptyLabel = new QLabel("Nenhuma música curtida ainda");
+        auto *emptyLabel = new QLabel(Lang::tr("Nenhuma música curtida ainda"));
         emptyLabel->setFont(Theme::bodyFont(14));
         emptyLabel->setStyleSheet(QString("color: %1; background: transparent; padding-top: 20px;").arg(Theme::textMuted().name()));
         emptyLabel->setAlignment(Qt::AlignCenter);
@@ -107,7 +108,7 @@ void LikedPage::refresh(int currentTrackId, bool isPlaying) {
     playBtn->setFixedSize(48, 48);
     playBtn->setCursor(Qt::PointingHandCursor);
     playBtn->setFont(Theme::iconFont(16));
-    playBtn->setToolTip("Tocar curtidas");
+    playBtn->setToolTip(Lang::tr("Tocar curtidas"));
     playBtn->setStyleSheet(QString(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 24px; font-family: \"Segoe MDL2 Assets\"; font-size: 16px; }"
         "QPushButton:hover { background: %3; }"
@@ -171,7 +172,7 @@ void LikedPage::refresh(int currentTrackId, bool isPlaying) {
             auto *tag = new QPushButton(track.folder);
             tag->setFont(Theme::bodyFont(10));
             tag->setCursor(Qt::PointingHandCursor);
-            tag->setToolTip(QString("Ir para a playlist \"%1\"").arg(track.folder));
+            tag->setToolTip(QString(Lang::tr("Ir para a playlist \"%1\"")).arg(track.folder));
             tag->setStyleSheet(QString(
                 "QPushButton { color: %1; background: " + Theme::accentRgba(0.10) + "; border: none; border-radius: 10px; padding: 2px 8px; }"
                 "QPushButton:hover { background: " + Theme::accentRgba(0.28) + "; color: %2; }"
@@ -193,7 +194,7 @@ void LikedPage::refresh(int currentTrackId, bool isPlaying) {
         enqueueBtn->setFixedSize(28, 28);
         enqueueBtn->setCursor(Qt::PointingHandCursor);
         enqueueBtn->setFont(Theme::iconFont(11));
-        enqueueBtn->setToolTip("Adicionar à fila");
+        enqueueBtn->setToolTip(Lang::tr("Adicionar à fila"));
         enqueueBtn->setStyleSheet(QString(
             "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %2; }"
@@ -206,7 +207,7 @@ void LikedPage::refresh(int currentTrackId, bool isPlaying) {
         editBtn->setFixedSize(28, 28);
         editBtn->setCursor(Qt::PointingHandCursor);
         editBtn->setFont(Theme::iconFont(11));
-        editBtn->setToolTip("Editar música");
+        editBtn->setToolTip(Lang::tr("Editar música"));
         editBtn->setStyleSheet(QString(
             "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %2; }"
@@ -219,7 +220,7 @@ void LikedPage::refresh(int currentTrackId, bool isPlaying) {
         delBtn->setFixedSize(28, 28);
         delBtn->setCursor(Qt::PointingHandCursor);
         delBtn->setFont(Theme::iconFont(11));
-        delBtn->setToolTip("Excluir música");
+        delBtn->setToolTip(Lang::tr("Excluir música"));
         delBtn->setStyleSheet(QString(
             "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %2; }"

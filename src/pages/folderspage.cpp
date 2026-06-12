@@ -1,4 +1,5 @@
 #include "folderspage.h"
+#include "lang.h"
 #include <QLabel>
 #include <QPushButton>
 #include <QGridLayout>
@@ -43,13 +44,13 @@ void FoldersPage::refresh() {
 
     // Header row: title + create button
     auto *headerRow = new QHBoxLayout();
-    auto *title = new QLabel("Playlists");
+    auto *title = new QLabel(Lang::tr("Playlists"));
     title->setFont(Theme::titleFont(28));
     title->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
     headerRow->addWidget(title);
     headerRow->addStretch();
 
-    auto *createBtn = new QPushButton("\uE109  Nova Playlist");
+    auto *createBtn = new QPushButton(QString("\uE109  ") + Lang::tr(Lang::tr("Nova Playlist")));
     createBtn->setFixedHeight(36);
     createBtn->setCursor(Qt::PointingHandCursor);
     createBtn->setFont(Theme::bodyFont(12));
@@ -70,7 +71,7 @@ void FoldersPage::refresh() {
     auto standalone = m_model->standaloneTracks();
 
     if (folders.isEmpty() && standalone.isEmpty()) {
-        auto *empty = new QLabel("Nenhuma playlist ainda\nCrie uma playlist ou adicione músicas");
+        auto *empty = new QLabel(Lang::tr("Nenhuma playlist ainda\nCrie uma playlist ou adicione músicas"));
         empty->setFont(Theme::bodyFont(14));
         empty->setStyleSheet(QString("color: %1; background: transparent; padding-top: 60px;").arg(Theme::textMuted().name()));
         empty->setAlignment(Qt::AlignCenter);
@@ -114,12 +115,12 @@ void FoldersPage::refresh() {
         }
         cardLayout->addWidget(coverWidget);
 
-        auto *nameLabel = new QLabel("Músicas avulsas");
+        auto *nameLabel = new QLabel(Lang::tr("Músicas avulsas"));
         nameLabel->setFont(Theme::bodyFont(14));
         nameLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold;").arg(Theme::text().name()));
         cardLayout->addWidget(nameLabel);
 
-        auto *countLabel = new QLabel(QString("%1 faixa%2").arg(standalone.size()).arg(standalone.size() != 1 ? "s" : ""));
+        auto *countLabel = new QLabel(QString(Lang::tr("%1 faixa%2")).arg(standalone.size()).arg(standalone.size() != 1 ? "s" : ""));
         countLabel->setFont(Theme::bodyFont(11));
         countLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
         cardLayout->addWidget(countLabel);
@@ -203,7 +204,7 @@ void FoldersPage::refresh() {
 
         cardLayout->addLayout(nameRow);
 
-        auto *countLabel = new QLabel(QString("%1 faixa%2").arg(ft.size()).arg(ft.size() != 1 ? "s" : ""));
+        auto *countLabel = new QLabel(QString(Lang::tr("%1 faixa%2")).arg(ft.size()).arg(ft.size() != 1 ? "s" : ""));
         countLabel->setFont(Theme::bodyFont(11));
         countLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
         cardLayout->addWidget(countLabel);
@@ -217,14 +218,14 @@ void FoldersPage::refresh() {
                 "QMenu::item:selected { background: %4; }"
             ).arg(Theme::card().name(), Theme::border().name(), Theme::text().name(), Theme::cardHover().name()));
 
-            menu->addAction(QString("\uE70F  Renomear"), [this, fid, fname]() {
+            menu->addAction(QString("\uE70F  ") + Lang::tr("Renomear"), [this, fid, fname]() {
                 showRenameDialog(fid, fname);
             });
-            menu->addAction(QString("\uE771  Editar capa"), [this, fid, fcover, fcoverImage]() {
+            menu->addAction(QString("\uE771  ") + Lang::tr("Editar capa"), [this, fid, fcover, fcoverImage]() {
                 showCoverDialog(fid, fcover, fcoverImage);
             });
             menu->addSeparator();
-            menu->addAction(QString("\uE107  Excluir playlist"), [this, fid, fname]() {
+            menu->addAction(QString("\uE107  ") + Lang::tr("Excluir playlist"), [this, fid, fname]() {
                 showDeleteConfirm(fid, fname);
             });
             menu->exec(QCursor::pos());
@@ -256,7 +257,7 @@ void FoldersPage::refresh() {
 
 void FoldersPage::showCreateDialog() {
     auto *dlg = new QDialog(this);
-    dlg->setWindowTitle("Nova Playlist");
+    dlg->setWindowTitle(Lang::tr("Nova Playlist"));
     dlg->setFixedSize(380, 270);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setStyleSheet(QString(
@@ -271,19 +272,19 @@ void FoldersPage::showCreateDialog() {
     layout->setContentsMargins(20, 20, 20, 20);
     layout->setSpacing(12);
 
-    auto *titleLabel = new QLabel("Nome da playlist");
+    auto *titleLabel = new QLabel(Lang::tr("Nome da playlist"));
     titleLabel->setFont(Theme::bodyFont(12));
     layout->addWidget(titleLabel);
 
     auto *nameEdit = new QLineEdit();
-    nameEdit->setPlaceholderText("Ex: Minha Playlist");
+    nameEdit->setPlaceholderText(Lang::tr("Ex: Minha Playlist"));
     nameEdit->setFont(Theme::bodyFont(13));
     layout->addWidget(nameEdit);
 
     // Color pickers
     auto pal = Theme::randomPalette();
     auto *colorRow = new QHBoxLayout();
-    auto *colorLabel = new QLabel("Cores da capa:");
+    auto *colorLabel = new QLabel(Lang::tr("Cores da capa:"));
     colorLabel->setFont(Theme::bodyFont(12));
     colorRow->addWidget(colorLabel);
 
@@ -295,7 +296,7 @@ void FoldersPage::showCreateDialog() {
     btn1->setCursor(Qt::PointingHandCursor);
     btn1->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px;").arg(c1->name()));
     connect(btn1, &QPushButton::clicked, [btn1, c1, dlg]() {
-        QColor chosen = QColorDialog::getColor(*c1, dlg, "Cor 1");
+        QColor chosen = QColorDialog::getColor(*c1, dlg, Lang::tr("Cor 1"));
         if (chosen.isValid()) {
             *c1 = chosen;
             btn1->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px;").arg(c1->name()));
@@ -308,7 +309,7 @@ void FoldersPage::showCreateDialog() {
     btn2->setCursor(Qt::PointingHandCursor);
     btn2->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px;").arg(c2->name()));
     connect(btn2, &QPushButton::clicked, [btn2, c2, dlg]() {
-        QColor chosen = QColorDialog::getColor(*c2, dlg, "Cor 2");
+        QColor chosen = QColorDialog::getColor(*c2, dlg, Lang::tr("Cor 2"));
         if (chosen.isValid()) {
             *c2 = chosen;
             btn2->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px;").arg(c2->name()));
@@ -328,7 +329,7 @@ void FoldersPage::showCreateDialog() {
     imgPreview->setStyleSheet(QString("background: %1; border-radius: 6px;").arg(Theme::bg().name()));
     imageRow->addWidget(imgPreview);
 
-    auto *pickImageBtn = new QPushButton("Escolher imagem");
+    auto *pickImageBtn = new QPushButton(Lang::tr("Escolher imagem"));
     pickImageBtn->setFont(Theme::bodyFont(11));
     pickImageBtn->setFixedHeight(32);
     pickImageBtn->setCursor(Qt::PointingHandCursor);
@@ -337,8 +338,8 @@ void FoldersPage::showCreateDialog() {
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
     connect(pickImageBtn, &QPushButton::clicked, [dlg, imagePath, imgPreview]() {
-        QString file = QFileDialog::getOpenFileName(dlg, "Escolher imagem da capa", QString(),
-            "Imagens (*.png *.jpg *.jpeg *.bmp *.webp)");
+        QString file = QFileDialog::getOpenFileName(dlg, Lang::tr("Escolher imagem da capa"), QString(),
+            Lang::tr("Imagens (*.png *.jpg *.jpeg *.bmp *.webp)"));
         if (file.isEmpty()) return;
         *imagePath = file;
         QPixmap pm = Theme::roundedCover(file, 50, 32, 6);
@@ -351,7 +352,7 @@ void FoldersPage::showCreateDialog() {
     // Buttons
     auto *btnRow = new QHBoxLayout();
     btnRow->addStretch();
-    auto *cancelBtn = new QPushButton("Cancelar");
+    auto *cancelBtn = new QPushButton(Lang::tr("Cancelar"));
     cancelBtn->setFont(Theme::bodyFont(12));
     cancelBtn->setFixedHeight(36);
     cancelBtn->setCursor(Qt::PointingHandCursor);
@@ -362,7 +363,7 @@ void FoldersPage::showCreateDialog() {
     connect(cancelBtn, &QPushButton::clicked, dlg, &QDialog::reject);
     btnRow->addWidget(cancelBtn);
 
-    auto *createBtn2 = new QPushButton("Criar");
+    auto *createBtn2 = new QPushButton(Lang::tr("Criar"));
     createBtn2->setFont(Theme::bodyFont(12));
     createBtn2->setFixedHeight(36);
     createBtn2->setCursor(Qt::PointingHandCursor);
@@ -387,7 +388,7 @@ void FoldersPage::showCreateDialog() {
 
 void FoldersPage::showRenameDialog(int id, const QString &currentName) {
     auto *dlg = new QDialog(this);
-    dlg->setWindowTitle("Renomear Playlist");
+    dlg->setWindowTitle(Lang::tr("Renomear Playlist"));
     dlg->setFixedSize(340, 140);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setStyleSheet(QString(
@@ -409,7 +410,7 @@ void FoldersPage::showRenameDialog(int id, const QString &currentName) {
 
     auto *btnRow = new QHBoxLayout();
     btnRow->addStretch();
-    auto *cancelBtn = new QPushButton("Cancelar");
+    auto *cancelBtn = new QPushButton(Lang::tr("Cancelar"));
     cancelBtn->setFont(Theme::bodyFont(12));
     cancelBtn->setFixedHeight(36);
     cancelBtn->setCursor(Qt::PointingHandCursor);
@@ -420,7 +421,7 @@ void FoldersPage::showRenameDialog(int id, const QString &currentName) {
     connect(cancelBtn, &QPushButton::clicked, dlg, &QDialog::reject);
     btnRow->addWidget(cancelBtn);
 
-    auto *saveBtn = new QPushButton("Salvar");
+    auto *saveBtn = new QPushButton(Lang::tr("Salvar"));
     saveBtn->setFont(Theme::bodyFont(12));
     saveBtn->setFixedHeight(36);
     saveBtn->setCursor(Qt::PointingHandCursor);
@@ -443,7 +444,7 @@ void FoldersPage::showRenameDialog(int id, const QString &currentName) {
 
 void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, const QString &currentImage) {
     auto *dlg = new QDialog(this);
-    dlg->setWindowTitle("Editar Capa");
+    dlg->setWindowTitle(Lang::tr("Editar Capa"));
     dlg->setFixedSize(320, 230);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setStyleSheet(QString("QDialog { background: %1; } QLabel { background: transparent; color: %2; }")
@@ -453,7 +454,7 @@ void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, co
     layout->setContentsMargins(20, 20, 20, 20);
     layout->setSpacing(14);
 
-    auto *label = new QLabel("Escolha as cores do gradiente:");
+    auto *label = new QLabel(Lang::tr("Escolha as cores do gradiente:"));
     label->setFont(Theme::bodyFont(12));
     layout->addWidget(label);
 
@@ -474,13 +475,13 @@ void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, co
             .arg(c1->name(), c2->name()));
     };
 
-    auto *btn1 = new QPushButton("Cor 1");
+    auto *btn1 = new QPushButton(Lang::tr("Cor 1"));
     btn1->setFixedSize(64, 36);
     btn1->setCursor(Qt::PointingHandCursor);
     btn1->setFont(Theme::bodyFont(11));
     btn1->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c1->name()));
     connect(btn1, &QPushButton::clicked, [btn1, c1, updatePreview, dlg]() {
-        QColor chosen = QColorDialog::getColor(*c1, dlg, "Cor 1");
+        QColor chosen = QColorDialog::getColor(*c1, dlg, Lang::tr("Cor 1"));
         if (chosen.isValid()) {
             *c1 = chosen;
             btn1->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c1->name()));
@@ -489,13 +490,13 @@ void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, co
     });
     colorRow->addWidget(btn1);
 
-    auto *btn2 = new QPushButton("Cor 2");
+    auto *btn2 = new QPushButton(Lang::tr("Cor 2"));
     btn2->setFixedSize(64, 36);
     btn2->setCursor(Qt::PointingHandCursor);
     btn2->setFont(Theme::bodyFont(11));
     btn2->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c2->name()));
     connect(btn2, &QPushButton::clicked, [btn2, c2, updatePreview, dlg]() {
-        QColor chosen = QColorDialog::getColor(*c2, dlg, "Cor 2");
+        QColor chosen = QColorDialog::getColor(*c2, dlg, Lang::tr("Cor 2"));
         if (chosen.isValid()) {
             *c2 = chosen;
             btn2->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c2->name()));
@@ -520,7 +521,7 @@ void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, co
     }
     imageRow->addWidget(imgPreview);
 
-    auto *pickImageBtn = new QPushButton("Escolher imagem");
+    auto *pickImageBtn = new QPushButton(Lang::tr("Escolher imagem"));
     pickImageBtn->setFont(Theme::bodyFont(11));
     pickImageBtn->setFixedHeight(32);
     pickImageBtn->setCursor(Qt::PointingHandCursor);
@@ -529,8 +530,8 @@ void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, co
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
     connect(pickImageBtn, &QPushButton::clicked, [dlg, imagePath, imgPreview]() {
-        QString file = QFileDialog::getOpenFileName(dlg, "Escolher imagem da capa", QString(),
-            "Imagens (*.png *.jpg *.jpeg *.bmp *.webp)");
+        QString file = QFileDialog::getOpenFileName(dlg, Lang::tr("Escolher imagem da capa"), QString(),
+            Lang::tr("Imagens (*.png *.jpg *.jpeg *.bmp *.webp)"));
         if (file.isEmpty()) return;
         *imagePath = file;
         QPixmap pm = Theme::roundedCover(file, 50, 32, 6);
@@ -538,11 +539,11 @@ void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, co
     });
     imageRow->addWidget(pickImageBtn);
 
-    auto *clearImageBtn = new QPushButton("Remover");
+    auto *clearImageBtn = new QPushButton(Lang::tr("Remover"));
     clearImageBtn->setFont(Theme::bodyFont(11));
     clearImageBtn->setFixedHeight(32);
     clearImageBtn->setCursor(Qt::PointingHandCursor);
-    clearImageBtn->setToolTip("Voltar a usar o gradiente de cores");
+    clearImageBtn->setToolTip(Lang::tr("Voltar a usar o gradiente de cores"));
     clearImageBtn->setStyleSheet(QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 8px; padding: 0 10px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
@@ -558,7 +559,7 @@ void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, co
 
     auto *btnRow = new QHBoxLayout();
     btnRow->addStretch();
-    auto *cancelBtn = new QPushButton("Cancelar");
+    auto *cancelBtn = new QPushButton(Lang::tr("Cancelar"));
     cancelBtn->setFont(Theme::bodyFont(12));
     cancelBtn->setFixedHeight(34);
     cancelBtn->setCursor(Qt::PointingHandCursor);
@@ -569,7 +570,7 @@ void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, co
     connect(cancelBtn, &QPushButton::clicked, [dlg, c1, c2, imagePath]() { delete c1; delete c2; delete imagePath; dlg->reject(); });
     btnRow->addWidget(cancelBtn);
 
-    auto *saveBtn = new QPushButton("Salvar");
+    auto *saveBtn = new QPushButton(Lang::tr("Salvar"));
     saveBtn->setFont(Theme::bodyFont(12));
     saveBtn->setFixedHeight(34);
     saveBtn->setCursor(Qt::PointingHandCursor);
@@ -594,9 +595,9 @@ void FoldersPage::showCoverDialog(int id, const Theme::GradientPair &current, co
 
 void FoldersPage::showDeleteConfirm(int id, const QString &name) {
     auto *dlg = new QMessageBox(this);
-    dlg->setWindowTitle("Excluir Playlist");
-    dlg->setText(QString("Excluir a playlist \"%1\"?").arg(name));
-    dlg->setInformativeText("As músicas não serão apagadas — ficarão como músicas avulsas.");
+    dlg->setWindowTitle(Lang::tr("Excluir Playlist"));
+    dlg->setText(QString(Lang::tr("Excluir a playlist \"%1\"?")).arg(name));
+    dlg->setInformativeText(Lang::tr("As músicas não serão apagadas — ficarão como músicas avulsas."));
     dlg->setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
     dlg->setDefaultButton(QMessageBox::Cancel);
     dlg->setStyleSheet(QString(

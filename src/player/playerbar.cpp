@@ -1,8 +1,11 @@
 #include "playerbar.h"
+#include "lang.h"
+#include "database.h"
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QRandomGenerator>
 #include <QResizeEvent>
+#include <QSettings>
 
 PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     : QWidget(parent), m_model(model)
@@ -14,7 +17,12 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     m_player = new QMediaPlayer(this);
     m_audioOutput = new QAudioOutput(this);
     m_player->setAudioOutput(m_audioOutput);
-    m_audioOutput->setVolume(0.7);
+
+    // Restore the volume and mute state from the last session (theme and
+    // downloadDir live in QSettings too, so playback audio joins them).
+    const int savedVolume = qBound(0, QSettings().value("volume", 70).toInt(), 100);
+    m_audioOutput->setVolume(savedVolume / 100.0);
+    m_audioOutput->setMuted(QSettings().value("muted", false).toBool());
 
     // ── Layout ──────────────────────────────────────────────
     auto *mainLayout = new QHBoxLayout(this);
@@ -123,13 +131,14 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
 
     // Right: volume
     auto *volLayout = new QHBoxLayout();
+    volLayout->setContentsMargins(0, 0, 0, 0);
     volLayout->setSpacing(8);
 
     m_queueBtn = new QPushButton("\uE8FD", this);   // list/queue glyph
     m_queueBtn->setFixedSize(24, 24);
     m_queueBtn->setCursor(Qt::PointingHandCursor);
     m_queueBtn->setFont(Theme::iconFont(14));
-    m_queueBtn->setToolTip("Fila de reprodu\u00E7\u00E3o");
+    m_queueBtn->setToolTip(Lang::tr("Fila de reprodu\u00E7\u00E3o"));
     m_queueBtn->setStyleSheet(QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 4px; }"
         "QPushButton:hover { color: %2; background: rgba(255,255,255,0.05); }"
@@ -140,7 +149,7 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     m_volIcon->setFixedSize(24, 24);
     m_volIcon->setCursor(Qt::PointingHandCursor);
     m_volIcon->setFont(Theme::iconFont(14));
-    m_volIcon->setToolTip("Silenciar");
+    m_volIcon->setToolTip(Lang::tr("Silenciar"));
     m_volIcon->setStyleSheet(QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 4px; }"
         "QPushButton:hover { color: %2; background: rgba(255,255,255,0.05); }"
@@ -148,15 +157,16 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
 
     m_volumeSlider = new ClickableSlider(Qt::Horizontal, this);
     m_volumeSlider->setRange(0, 100);
-    m_volumeSlider->setValue(70);
-    m_volumeSlider->setFixedWidth(100);
+    m_volumeSlider->setValue(savedVolume);
+    m_volumeSlider->setFixedSize(100, 24);
     m_volumeSlider->setStyleSheet(sliderStyle(Theme::textSoft().name()));
+    updateVolIcon();   // reflect the restored mute state on the icon
 
+    // Everything pinned to the same 24px center line, with uniform spacing.
     volLayout->addStretch();
-    volLayout->addWidget(m_queueBtn);
-    volLayout->addSpacing(4);
-    volLayout->addWidget(m_volIcon);
-    volLayout->addWidget(m_volumeSlider);
+    volLayout->addWidget(m_queueBtn, 0, Qt::AlignVCenter);
+    volLayout->addWidget(m_volIcon, 0, Qt::AlignVCenter);
+    volLayout->addWidget(m_volumeSlider, 0, Qt::AlignVCenter);
 
     auto *rightWidget = new QWidget(this);
     rightWidget->setLayout(volLayout);
@@ -165,7 +175,7 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     mainLayout->addWidget(rightWidget);
 
     // Empty state label
-    m_emptyLabel = new QLabel("Adicione músicas para começar a ouvir", this);
+    m_emptyLabel = new QLabel(Lang::tr("Adicione músicas para começar a ouvir"), this);
     m_emptyLabel->setFont(Theme::bodyFont(12));
     m_emptyLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     m_emptyLabel->setAlignment(Qt::AlignCenter);
@@ -198,13 +208,16 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
 
     connect(m_volIcon, &QPushButton::clicked, this, [this]() {
         m_audioOutput->setMuted(!m_audioOutput->isMuted());
+        QSettings().setValue("muted", m_audioOutput->isMuted());
         updateVolIcon();
     });
 
     connect(m_volumeSlider, &QSlider::sliderMoved, this, [this](int val) {
         m_audioOutput->setVolume(val / 100.0);
+        QSettings().setValue("volume", val);
         if (m_audioOutput->isMuted()) {
             m_audioOutput->setMuted(false);
+            QSettings().setValue("muted", false);
             updateVolIcon();
         }
     });
@@ -273,18 +286,10 @@ QList<Track> PlayerBar::upcomingContext() const {
     return q.mid(idx + 1);
 }
 
-void PlayerBar::loadAndPlay(const Track &track) {
-    m_currentTrackId = track.id;
-    m_currentTrack   = track;
-    m_player->setSource(track.audioUrl);
-    m_player->play();
-
+void PlayerBar::showTrackUi(const Track &track) {
     m_titleLabel->setText(track.title);
     m_artistLabel->setText(track.artist);
     m_vinyl->setGradient(track.cover);
-    m_vinyl->setSpinning(true);
-
-    m_playBtn->setText("\uE103");
 
     m_emptyLabel->hide();
     m_controlsContainer->show();
@@ -293,6 +298,18 @@ void PlayerBar::loadAndPlay(const Track &track) {
         child->show();
     }
     m_emptyLabel->hide();
+}
+
+void PlayerBar::loadAndPlay(const Track &track) {
+    m_currentTrackId = track.id;
+    m_currentTrack   = track;
+    m_pendingSeekMs  = 0;   // a fresh track starts from the beginning
+    m_player->setSource(track.audioUrl);
+    m_player->play();
+
+    showTrackUi(track);
+    m_vinyl->setSpinning(true);
+    m_playBtn->setText("\uE103");
 
     updateControls();
     emit trackChanged(m_currentTrackId);
@@ -300,6 +317,40 @@ void PlayerBar::loadAndPlay(const Track &track) {
 
     // Record this play in the listening history (last_played_at + play_count).
     m_model->markPlayed(track.id);
+}
+
+void PlayerBar::persistState() {
+    Database::PlaybackState s;
+    s.trackId = m_currentTrackId;
+    s.posMs   = m_currentTrackId != 0 ? m_player->position() : 0;
+    s.volume  = qBound(0.0, double(m_audioOutput->volume()), 1.0);
+    s.shuffle = m_shuffle;
+    s.repeat  = m_repeat;
+    Database::instance().saveState(s);
+}
+
+void PlayerBar::restoreSession() {
+    const auto s = Database::instance().loadState();
+    if (s.trackId == 0) return;
+    Track *t = m_model->findTrack(s.trackId);
+    if (!t) return;   // track was deleted since the last session
+
+    m_shuffle = s.shuffle;
+    m_repeat  = s.repeat;
+
+    m_currentTrackId = t->id;
+    m_currentTrack   = *t;
+    m_player->setSource(t->audioUrl);
+    m_player->pause();              // load the media without playing
+    m_pendingSeekMs = s.posMs;      // applied once the media finishes loading
+
+    showTrackUi(*t);
+    m_vinyl->setSpinning(false);
+    m_playBtn->setText("\uE102");   // play glyph: resumes where it stopped
+
+    updateControls();
+    emit trackChanged(m_currentTrackId);
+    emit playingChanged(false);
 }
 
 void PlayerBar::togglePlay() {
@@ -321,8 +372,8 @@ void PlayerBar::togglePlay() {
 void PlayerBar::next() {
     if (m_currentTrackId == 0) return;
 
-    // Repeat-one wins over everything.
-    if (m_repeat) { loadAndPlay(m_currentTrack); return; }
+    // Repeat-one only affects the automatic advance at the end of a track
+    // (handled in onMediaStatusChanged); pressing "next" always skips ahead.
 
     // Manually queued tracks play before continuing the context.
     if (!m_userQueue.isEmpty()) {
@@ -388,6 +439,14 @@ void PlayerBar::onDurationChanged(qint64 dur) {
 }
 
 void PlayerBar::onMediaStatusChanged(QMediaPlayer::MediaStatus status) {
+    // Apply the position restored from the last session once the media is
+    // actually seekable.
+    if ((status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::BufferedMedia)
+            && m_pendingSeekMs > 0) {
+        m_player->setPosition(m_pendingSeekMs);
+        m_pendingSeekMs = 0;
+    }
+
     if (status == QMediaPlayer::EndOfMedia) {
         if (m_repeat) {
             m_player->setPosition(0);
@@ -415,7 +474,7 @@ QString PlayerBar::buttonStyle(bool active) const {
 void PlayerBar::updateVolIcon() {
     bool muted = m_audioOutput->isMuted();
     m_volIcon->setText(muted ? "\uE198" : "\uE15D");
-    m_volIcon->setToolTip(muted ? "Ativar som" : "Silenciar");
+    m_volIcon->setToolTip(muted ? Lang::tr("Ativar som") : Lang::tr("Silenciar"));
 }
 
 QString PlayerBar::sliderStyle(const QString &accentColor) const {

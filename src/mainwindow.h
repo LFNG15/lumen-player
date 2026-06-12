@@ -15,6 +15,10 @@
 #include "folderdetailpage.h"
 #include "likedpage.h"
 #include "queuepage.h"
+#include "searchpage.h"
+
+class QLineEdit;
+class QSplitter;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -26,16 +30,21 @@ signals:
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
 
 private slots:
     void navigateTo(const QString &page, const QString &data = "");
     void refreshCurrentPage();
     void onTrackPlay(const Track &track);
     void showThemePicker();
+    void showLanguagePicker();
 
 private:
+    QWidget *buildTopBar();
     void buildSidebar(QWidget *sidebar);
     void refreshSidebarFolders();
+    void applySidebarCollapsed(bool collapsed, bool save = true);
+    void updateNavButtons();
     void showToast(const QString &text);
     void repositionToast();
     void showEditTrackDialog(const Track &track);
@@ -50,15 +59,26 @@ private:
     FoldersPage *m_foldersPage;
     FolderDetailPage *m_folderDetailPage;
     LikedPage *m_likedPage;
-    QueuePage *m_queuePage;
+    QueuePage *m_queuePage = nullptr;
+    SearchPage *m_searchPage;
+    QLineEdit *m_searchEdit;
 
     // Sidebar
+    QSplitter *m_splitter = nullptr;
+    QWidget *m_sidebar = nullptr;
     QPushButton *m_navHome;
     QPushButton *m_navAdd;
     QPushButton *m_navFolders;
     QVBoxLayout *m_sidebarFoldersLayout;
     QWidget *m_sidebarFoldersContainer;
     QLabel *m_trackCountLabel;
+    QLabel *m_logoText = nullptr;
+    QLabel *m_badge = nullptr;
+    QLabel *m_foldersHeader = nullptr;
+    QPushButton *m_collapseBtn = nullptr;
+    QPushButton *m_langBtn = nullptr;
+    QHBoxLayout *m_logoLayout = nullptr;
+    bool m_sidebarCollapsed = false;
 
     QString m_currentPage;
 

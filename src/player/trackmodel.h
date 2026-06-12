@@ -52,7 +52,7 @@ public:
     QList<Track> &tracks();
     const QList<Track> &tracks() const;
 
-    void addTrack(const Track &track);
+    int  addTrack(const Track &track);   // returns the new track's library id
     void removeTrack(int id);
     void updateTrack(int id, const QString &title, const QString &artist);
     void toggleLike(int id);
@@ -66,6 +66,8 @@ public:
     QList<Track> likedTracks() const;
     QList<Track> recentTracks(int count = 8) const;
     QList<Track> recentlyPlayed(int count = 8) const;
+    // Playlists ordered by when one of their tracks was last played.
+    QList<Folder> recentlyPlayedFolders(int count = 6) const;
 
     // Playlist CRUD
     int  createPlaylist(const QString &name, const QColor &c1, const QColor &c2,

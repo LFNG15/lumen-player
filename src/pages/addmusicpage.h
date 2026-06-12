@@ -41,6 +41,7 @@ private:
     void refreshFileList();
     void addAllToLibrary();
     void startDownload();
+    void startPlaylistImport();
 
     // User-configurable folder where YouTube downloads are saved (persisted in
     // QSettings; defaults to the system Music folder under "Lumen Music").
@@ -61,6 +62,8 @@ private:
     QWidget     *m_folderSection;
     bool         m_isDragOver = false;
 
+    QLineEdit   *m_importUrlEdit    = nullptr;
+    QLabel      *m_importStatus     = nullptr;
     QLineEdit   *m_urlEdit          = nullptr;
     QPushButton *m_downloadBtn      = nullptr;
     QLabel      *m_downloadStatus   = nullptr;
