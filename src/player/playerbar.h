@@ -37,6 +37,11 @@ public:
     bool isPlaying() const;
     int  currentTrackId() const;
 
+    // Session persistence: the last track and position are stored in the
+    // database on quit and restored (paused) on the next launch.
+    void persistState();
+    void restoreSession();
+
 signals:
     void trackChanged(int trackId);
     void playingChanged(bool playing);
@@ -53,6 +58,7 @@ private slots:
 
 private:
     void loadAndPlay(const Track &track);
+    void showTrackUi(const Track &track);
     const QList<Track> &activeQueue() const;
     void updateControls();
     QString buttonStyle(bool active = false) const;
@@ -85,6 +91,7 @@ private:
     int  m_currentTrackId = 0;
     bool m_shuffle = false;
     bool m_repeat  = false;
+    qint64 m_pendingSeekMs = 0;   // restored position, applied once media loads
     QList<Track> m_queue;       // current playback context; empty = full library
     QList<Track> m_userQueue;   // manually queued tracks, played before the context
     Track        m_currentTrack;

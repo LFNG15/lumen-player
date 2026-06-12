@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "lang.h"
 #include <QLabel>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -10,6 +11,12 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QIcon>
+#include <QSplitter>
+#include <QCloseEvent>
+#include <QMenu>
+#include <algorithm>
+#include "coverwidget.h"
+#include "textutils.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -29,23 +36,20 @@ MainWindow::MainWindow(QWidget *parent)
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    auto *bodyLayout = new QHBoxLayout();
-    bodyLayout->setContentsMargins(0, 0, 0, 0);
-    bodyLayout->setSpacing(0);
+    // Body: a splitter so the user can resize the sidebar and queue panel.
+    m_splitter = new QSplitter(Qt::Horizontal);
+    m_splitter->setChildrenCollapsible(false);
+    m_splitter->setHandleWidth(2);
+    m_splitter->setStyleSheet(QString(
+        "QSplitter::handle { background: %1; }"
+        "QSplitter::handle:hover { background: %2; }"
+    ).arg(Theme::border().name(), Theme::accentRgba(0.5)));
 
     // ── Sidebar ─────────────────────────────────────────────
-    auto *sidebar = new QWidget();
-    sidebar->setFixedWidth(260);
-    sidebar->setStyleSheet(QString("background-color: %1;").arg(Theme::surface().name()));
-    buildSidebar(sidebar);
-    bodyLayout->addWidget(sidebar);
-
-    // Separator
-    auto *sep = new QFrame();
-    sep->setFrameShape(QFrame::VLine);
-    sep->setStyleSheet(QString("color: %1;").arg(Theme::border().name()));
-    sep->setFixedWidth(1);
-    bodyLayout->addWidget(sep);
+    m_sidebar = new QWidget();
+    m_sidebar->setStyleSheet(QString("background-color: %1;").arg(Theme::surface().name()));
+    buildSidebar(m_sidebar);
+    m_splitter->addWidget(m_sidebar);
 
     // ── Stacked pages ───────────────────────────────────────
     m_stack = new QStackedWidget();
@@ -56,6 +60,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_foldersPage = new FoldersPage(m_model, this);
     m_folderDetailPage = new FolderDetailPage(m_model, this);
     m_likedPage = new LikedPage(m_model, this);
+    m_searchPage = new SearchPage(m_model, this);
 
     m_stack->addWidget(m_homePage);       // 0
     m_stack->addWidget(m_addPage);        // 1
@@ -63,16 +68,55 @@ MainWindow::MainWindow(QWidget *parent)
     m_stack->addWidget(m_folderDetailPage); // 3
     m_stack->addWidget(m_likedPage);      // 4
 
-    bodyLayout->addWidget(m_stack, 1);
-    mainLayout->addLayout(bodyLayout, 1);
+    // Content column: global search bar on top of the pages.
+    auto *contentWidget = new QWidget();
+    contentWidget->setStyleSheet("background: transparent;");
+    contentWidget->setMinimumWidth(340);
+    auto *contentColumn = new QVBoxLayout(contentWidget);
+    contentColumn->setContentsMargins(0, 0, 0, 0);
+    contentColumn->setSpacing(0);
+    contentColumn->addWidget(buildTopBar());
+    contentColumn->addWidget(m_stack, 1);
+
+    m_splitter->addWidget(contentWidget);
+    m_splitter->setStretchFactor(0, 0);
+    m_splitter->setStretchFactor(1, 1);
+    mainLayout->addWidget(m_splitter, 1);
 
     // ── Player bar ──────────────────────────────────────────
     m_playerBar = new PlayerBar(m_model, this);
     mainLayout->addWidget(m_playerBar);
 
-    // Queue page needs the player bar to read the live queue.
+    m_stack->addWidget(m_searchPage);  // 5
+
+    // Queue side panel (Spotify-style): lives next to the content, outside
+    // the stack, and is toggled by the player bar's queue button. It needs
+    // the player bar to read the live queue.
     m_queuePage = new QueuePage(m_model, m_playerBar, this);
-    m_stack->addWidget(m_queuePage);   // 5
+    m_queuePage->setMinimumWidth(220);
+    m_queuePage->setMaximumWidth(420);
+    m_queuePage->hide();
+    m_splitter->addWidget(m_queuePage);
+    m_splitter->setStretchFactor(2, 0);
+
+    // Restore the user's panel sizes and collapsed state from the last session.
+    {
+        QSettings settings;
+        applySidebarCollapsed(settings.value("sidebarCollapsed", false).toBool(), false);
+        const int sidebarW = settings.value("sidebarWidth", 260).toInt();
+        if (!m_sidebarCollapsed)
+            m_splitter->setSizes({sidebarW, qMax(360, width() - sidebarW)});
+    }
+    connect(m_splitter, &QSplitter::splitterMoved, this, [this]() {
+        QSettings settings;
+        if (!m_sidebarCollapsed)
+            settings.setValue("sidebarWidth", m_splitter->sizes().value(0));
+        if (m_queuePage->isVisible())
+            settings.setValue("queueWidth", m_splitter->sizes().value(2));
+        // The grid view sizes its cells from the sidebar width.
+        if (!m_sidebarCollapsed && settings.value("sidebarView", "list").toString() == "grid")
+            refreshSidebarFolders();
+    });
 
     // ── Connections ─────────────────────────────────────────
     // Home page
@@ -84,7 +128,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_homePage, &HomePage::navigateTo, this, &MainWindow::navigateTo);
     connect(m_homePage, &HomePage::enqueueRequested, this, [this](const Track &t) {
         m_playerBar->enqueue(t);
-        showToast("Adicionado à fila");
+        showToast(Lang::tr("Adicionado à fila"));
     });
     connect(m_homePage, &HomePage::editTrackRequested, this, [this](const Track &t) {
         showEditTrackDialog(t);
@@ -120,7 +164,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_folderDetailPage, &FolderDetailPage::navigateBack, this, [this]() { navigateTo("folders"); });
     connect(m_folderDetailPage, &FolderDetailPage::enqueueRequested, this, [this](const Track &t) {
         m_playerBar->enqueue(t);
-        showToast("Adicionado à fila");
+        showToast(Lang::tr("Adicionado à fila"));
     });
 
     // Liked page
@@ -135,7 +179,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_likedPage, &LikedPage::enqueueRequested, this, [this](const Track &t) {
         m_playerBar->enqueue(t);
-        showToast("Adicionado à fila");
+        showToast(Lang::tr("Adicionado à fila"));
     });
     connect(m_likedPage, &LikedPage::editTrackRequested, this, [this](const Track &t) {
         showEditTrackDialog(t);
@@ -163,27 +207,117 @@ MainWindow::MainWindow(QWidget *parent)
         m_model->toggleLike(id);
         refreshCurrentPage();
     });
-    connect(m_queuePage, &QueuePage::navigateBack, this, [this]() { navigateTo("home"); });
+    connect(m_queuePage, &QueuePage::navigateBack, this, [this]() { m_queuePage->hide(); });
+
+    // Search page
+    connect(m_searchPage, &SearchPage::playRequested, this, &MainWindow::onTrackPlay);
+    connect(m_searchPage, &SearchPage::likeToggled, this, [this](int id) {
+        m_model->toggleLike(id);
+        refreshCurrentPage();
+    });
+    connect(m_searchPage, &SearchPage::enqueueRequested, this, [this](const Track &t) {
+        m_playerBar->enqueue(t);
+        showToast(Lang::tr("Adicionado à fila"));
+    });
+    connect(m_searchPage, &SearchPage::navigateTo, this, &MainWindow::navigateTo);
 
     // Player bar
     connect(m_playerBar, &PlayerBar::trackChanged, this, [this](int) {
         refreshCurrentPage();
     });
-    connect(m_playerBar, &PlayerBar::queueRequested, this, [this]() { navigateTo("queue"); });
+    connect(m_playerBar, &PlayerBar::queueRequested, this, [this]() {
+        if (m_queuePage->isVisible()) {
+            m_queuePage->hide();
+        } else {
+            m_queuePage->refresh(m_playerBar->currentTrackId(), m_playerBar->isPlaying());
+            m_queuePage->show();
+            // Open at the width the user last dragged it to.
+            const int queueW = QSettings().value("queueWidth", 280).toInt();
+            auto sizes = m_splitter->sizes();
+            if (sizes.size() == 3) {
+                const int total = sizes[0] + sizes[1] + sizes[2];
+                m_splitter->setSizes({sizes[0], qMax(340, total - sizes[0] - queueW), queueW});
+            }
+        }
+    });
     connect(m_playerBar, &PlayerBar::queueChanged, this, [this]() { refreshCurrentPage(); });
 
     // Model changes — keep the count label, the visible page, and the sidebar
     // in sync so edits (cover image/colors, rename, etc.) reflect immediately.
     connect(m_model, &TrackModel::tracksChanged, this, [this]() {
-        m_trackCountLabel->setText(QString("%1 faixa%2 na biblioteca")
+        m_trackCountLabel->setText(QString(Lang::tr("%1 faixa%2 na biblioteca"))
             .arg(m_model->tracks().size())
             .arg(m_model->tracks().size() != 1 ? "s" : ""));
         refreshCurrentPage();
         refreshSidebarFolders();
     });
 
+    // Persist the playback session on quit — aboutToQuit also fires on the
+    // theme/language restart path, which skips closeEvent.
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() { m_playerBar->persistState(); });
+
+    // Resume the last session: same track, same position, paused.
+    m_playerBar->restoreSession();
+
     // Initial state
     navigateTo("home");
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    m_playerBar->persistState();
+    QMainWindow::closeEvent(event);
+}
+
+QWidget *MainWindow::buildTopBar() {
+    auto *bar = new QWidget();
+    bar->setFixedHeight(56);
+    bar->setStyleSheet("background: transparent;");
+
+    auto *layout = new QHBoxLayout(bar);
+    layout->setContentsMargins(32, 10, 32, 6);
+    layout->setSpacing(0);
+
+    // Search pill: glyph + borderless line edit inside a rounded container.
+    auto *pill = new QWidget();
+    pill->setObjectName("searchPill");
+    pill->setFixedHeight(40);
+    pill->setMaximumWidth(440);
+    pill->setStyleSheet(QString(
+        "QWidget#searchPill { background: %1; border: 1px solid %2; border-radius: 20px; }"
+    ).arg(Theme::surface().name(), Theme::border().name()));
+
+    auto *pillLayout = new QHBoxLayout(pill);
+    pillLayout->setContentsMargins(14, 0, 14, 0);
+    pillLayout->setSpacing(8);
+
+    auto *searchIcon = new QLabel("");
+    searchIcon->setFont(Theme::iconFont(13));
+    searchIcon->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    pillLayout->addWidget(searchIcon);
+
+    m_searchEdit = new QLineEdit();
+    m_searchEdit->setPlaceholderText(Lang::tr("O que você quer ouvir?"));
+    m_searchEdit->setFont(Theme::bodyFont(12));
+    m_searchEdit->setClearButtonEnabled(true);
+    m_searchEdit->setStyleSheet(QString(
+        "QLineEdit { background: transparent; color: %1; border: none; }"
+    ).arg(Theme::text().name()));
+    pillLayout->addWidget(m_searchEdit, 1);
+
+    connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
+        m_searchPage->setQuery(text);
+        if (!text.trimmed().isEmpty()) {
+            if (m_currentPage != "search") navigateTo("search");
+            else refreshCurrentPage();
+        } else if (m_currentPage == "search") {
+            navigateTo("home");
+        }
+    });
+
+    layout->addStretch();
+    layout->addWidget(pill, 1);
+    layout->addStretch();
+    return bar;
 }
 
 void MainWindow::buildSidebar(QWidget *sidebar) {
@@ -194,29 +328,43 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     // Logo
     auto *logoWidget = new QWidget();
     logoWidget->setStyleSheet("background: transparent;");
-    auto *logoLayout = new QHBoxLayout(logoWidget);
-    logoLayout->setContentsMargins(20, 20, 20, 16);
-    logoLayout->setSpacing(8);
+    m_logoLayout = new QHBoxLayout(logoWidget);
+    m_logoLayout->setContentsMargins(20, 20, 20, 16);
+    m_logoLayout->setSpacing(8);
 
     auto *logoIcon = new QLabel();
     logoIcon->setFixedSize(30, 30);
     logoIcon->setScaledContents(true);
     logoIcon->setStyleSheet("background: transparent;");
     logoIcon->setPixmap(QIcon(":/icon.png").pixmap(30, 30));
-    logoLayout->addWidget(logoIcon);
+    m_logoLayout->addWidget(logoIcon);
 
-    auto *logoText = new QLabel("Lumen");
-    logoText->setFont(Theme::titleFont(18));
-    logoText->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
-    logoLayout->addWidget(logoText);
+    m_logoText = new QLabel("Lumen");
+    m_logoText->setFont(Theme::titleFont(18));
+    m_logoText->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
+    m_logoLayout->addWidget(m_logoText);
 
-    auto *badge = new QLabel("MUSIC");
-    badge->setFont(Theme::bodyFont(9));
+    m_badge = new QLabel("MUSIC");
+    m_badge->setFont(Theme::bodyFont(9));
     QColor ac = Theme::accent();
-    badge->setStyleSheet(QString("color: %1; background: rgba(%2,%3,%4,0.16); border-radius: 4px; padding: 2px 6px; font-weight: bold; letter-spacing: 1px;")
+    m_badge->setStyleSheet(QString("color: %1; background: rgba(%2,%3,%4,0.16); border-radius: 4px; padding: 2px 6px; font-weight: bold; letter-spacing: 1px;")
         .arg(Theme::accent().name()).arg(ac.red()).arg(ac.green()).arg(ac.blue()));
-    logoLayout->addWidget(badge);
-    logoLayout->addStretch();
+    m_logoLayout->addWidget(m_badge);
+    m_logoLayout->addStretch();
+
+    // Collapse/expand the sidebar (icons + covers only when collapsed).
+    m_collapseBtn = new QPushButton("");
+    m_collapseBtn->setFixedSize(24, 24);
+    m_collapseBtn->setCursor(Qt::PointingHandCursor);
+    m_collapseBtn->setFont(Theme::iconFont(10));
+    m_collapseBtn->setStyleSheet(QString(
+        "QPushButton { background: transparent; color: %1; border: none; border-radius: 12px; }"
+        "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+    ).arg(Theme::textMuted().name(), Theme::text().name()));
+    connect(m_collapseBtn, &QPushButton::clicked, this, [this]() {
+        applySidebarCollapsed(!m_sidebarCollapsed);
+    });
+    m_logoLayout->addWidget(m_collapseBtn);
 
     layout->addWidget(logoWidget);
 
@@ -232,6 +380,9 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         btn->setFixedHeight(40);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFont(Theme::bodyFont(13));
+        // Stash the parts so the collapsed mode can show the icon alone.
+        btn->setProperty("navIcon", icon);
+        btn->setProperty("navText", text);
         btn->setStyleSheet(QString(
             "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; text-align: left; padding-left: 14px; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { background: rgba(255,255,255,0.05); color: %2; }"
@@ -239,9 +390,9 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         return btn;
     };
 
-    m_navHome    = makeNavBtn("Início",    "\uE10F");
-    m_navAdd     = makeNavBtn("Adicionar", "\uE109");
-    m_navFolders = makeNavBtn("Playlists", "\uE188");
+    m_navHome    = makeNavBtn(Lang::tr("Início"),    "\uE10F");
+    m_navAdd     = makeNavBtn(Lang::tr("Adicionar"), "\uE109");
+    m_navFolders = makeNavBtn(Lang::tr("Playlists"), "\uE188");
 
     connect(m_navHome, &QPushButton::clicked, [this]() { navigateTo("home"); });
     connect(m_navAdd, &QPushButton::clicked, [this]() { navigateTo("add"); });
@@ -253,12 +404,61 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 
     layout->addWidget(navWidget);
 
-    // Sidebar folders
-    auto *foldersHeader = new QLabel("  SUAS PLAYLISTS");
-    foldersHeader->setFont(Theme::bodyFont(10));
-    foldersHeader->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px; padding: 16px 20px 4px;")
+    // Sidebar folders header: label + search toggle + sort/view menu,
+    // like Spotify's "Your Library" header.
+    m_foldersHeaderRow = new QWidget();
+    m_foldersHeaderRow->setStyleSheet("background: transparent;");
+    auto *headerLayout = new QHBoxLayout(m_foldersHeaderRow);
+    headerLayout->setContentsMargins(20, 16, 14, 4);
+    headerLayout->setSpacing(2);
+
+    m_foldersHeader = new QLabel(Lang::tr("SUAS PLAYLISTS"));
+    m_foldersHeader->setFont(Theme::bodyFont(10));
+    m_foldersHeader->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;")
         .arg(Theme::textMuted().name()));
-    layout->addWidget(foldersHeader);
+    headerLayout->addWidget(m_foldersHeader);
+    headerLayout->addStretch();
+
+    auto makeHeaderBtn = [](const QString &glyph, const QString &tip) -> QPushButton* {
+        auto *btn = new QPushButton(glyph);
+        btn->setFixedSize(24, 24);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFont(Theme::iconFont(11));
+        btn->setToolTip(tip);
+        btn->setStyleSheet(QString(
+            "QPushButton { background: transparent; color: %1; border: none; border-radius: 12px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+        ).arg(Theme::textMuted().name(), Theme::text().name()));
+        return btn;
+    };
+
+    m_sidebarSearchBtn = makeHeaderBtn("", Lang::tr("Buscar playlists"));
+    connect(m_sidebarSearchBtn, &QPushButton::clicked, this, &MainWindow::toggleSidebarSearch);
+    headerLayout->addWidget(m_sidebarSearchBtn);
+
+    auto *sortBtn = makeHeaderBtn("", Lang::tr("Ordenar e exibir"));
+    connect(sortBtn, &QPushButton::clicked, this, &MainWindow::showSidebarSortMenu);
+    headerLayout->addWidget(sortBtn);
+
+    layout->addWidget(m_foldersHeaderRow);
+
+    // Inline playlist search, hidden until the magnifier is clicked.
+    m_sidebarSearchEdit = new QLineEdit();
+    m_sidebarSearchEdit->setPlaceholderText(Lang::tr("Buscar playlists"));
+    m_sidebarSearchEdit->setFont(Theme::bodyFont(11));
+    m_sidebarSearchEdit->setClearButtonEnabled(true);
+    m_sidebarSearchEdit->setFixedHeight(30);
+    m_sidebarSearchEdit->setStyleSheet(QString(
+        "QLineEdit { background: %1; color: %2; border: 1px solid %3; border-radius: 15px; padding: 0 12px; margin: 0 10px 4px; }"
+        "QLineEdit:focus { border-color: %4; }"
+    ).arg(Theme::surface().name(), Theme::text().name(),
+          Theme::border().name(), Theme::accent().name()));
+    m_sidebarSearchEdit->hide();
+    connect(m_sidebarSearchEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
+        m_sidebarFilter = text;
+        refreshSidebarFolders();
+    });
+    layout->addWidget(m_sidebarSearchEdit);
 
     auto *scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
@@ -288,16 +488,30 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     footerLayout->setContentsMargins(20, 8, 12, 12);
     footerLayout->setSpacing(4);
 
-    m_trackCountLabel = new QLabel("0 faixas na biblioteca");
+    m_trackCountLabel = new QLabel(QString(Lang::tr("%1 faixa%2 na biblioteca"))
+        .arg(m_model->tracks().size())
+        .arg(m_model->tracks().size() != 1 ? "s" : ""));
     m_trackCountLabel->setFont(Theme::bodyFont(10));
     m_trackCountLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     footerLayout->addWidget(m_trackCountLabel, 1);
+
+    m_langBtn = new QPushButton(Lang::isEnglish() ? "EN" : "PT");
+    m_langBtn->setFixedSize(28, 28);
+    m_langBtn->setCursor(Qt::PointingHandCursor);
+    m_langBtn->setFont(Theme::bodyFont(9));
+    m_langBtn->setToolTip(Lang::tr("Idioma"));
+    m_langBtn->setStyleSheet(QString(
+        "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; font-weight: bold; }"
+        "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+    ).arg(Theme::textMuted().name(), Theme::accent().name()));
+    connect(m_langBtn, &QPushButton::clicked, this, &MainWindow::showLanguagePicker);
+    footerLayout->addWidget(m_langBtn);
 
     auto *themeBtn = new QPushButton("\uE790");
     themeBtn->setFixedSize(28, 28);
     themeBtn->setCursor(Qt::PointingHandCursor);
     themeBtn->setFont(Theme::iconFont(12));
-    themeBtn->setToolTip("Escolher tema");
+    themeBtn->setToolTip(Lang::tr("Escolher tema"));
     themeBtn->setStyleSheet(QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
@@ -306,6 +520,49 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     footerLayout->addWidget(themeBtn);
 
     layout->addWidget(footerWidget);
+}
+
+void MainWindow::updateNavButtons() {
+    for (auto *btn : {m_navHome, m_navAdd, m_navFolders}) {
+        const QString icon = btn->property("navIcon").toString();
+        const QString text = btn->property("navText").toString();
+        btn->setText(m_sidebarCollapsed ? icon : QString("  %1  %2").arg(icon, text));
+        btn->setToolTip(m_sidebarCollapsed ? text : QString());
+    }
+}
+
+void MainWindow::applySidebarCollapsed(bool collapsed, bool save) {
+    m_sidebarCollapsed = collapsed;
+    if (save) QSettings().setValue("sidebarCollapsed", collapsed);
+
+    // Text-bearing elements disappear; icons and covers stay.
+    m_logoText->setVisible(!collapsed);
+    m_badge->setVisible(!collapsed);
+    m_foldersHeaderRow->setVisible(!collapsed);
+    m_sidebarSearchEdit->setVisible(!collapsed && !m_sidebarFilter.isEmpty());
+    m_trackCountLabel->setVisible(!collapsed);
+    m_langBtn->setVisible(!collapsed);
+
+    m_collapseBtn->setText(collapsed ? "" : "");
+    m_collapseBtn->setToolTip(collapsed ? Lang::tr("Expandir menu") : Lang::tr("Recolher menu"));
+    m_logoLayout->setContentsMargins(collapsed ? 10 : 20, 20, collapsed ? 10 : 20, 16);
+
+    if (collapsed) {
+        m_sidebar->setMinimumWidth(84);
+        m_sidebar->setMaximumWidth(84);
+        if (m_splitter)
+            m_splitter->setSizes({84, qMax(360, width() - 84)});
+    } else {
+        m_sidebar->setMinimumWidth(180);
+        m_sidebar->setMaximumWidth(420);
+        const int sidebarW = QSettings().value("sidebarWidth", 260).toInt();
+        if (m_splitter)
+            m_splitter->setSizes({sidebarW, qMax(360, width() - sidebarW)});
+    }
+
+    updateNavButtons();
+    navigateTo(m_currentPage.isEmpty() ? QStringLiteral("home") : m_currentPage,
+               m_folderDetailPage->property("folderName").toString());
 }
 
 void MainWindow::refreshSidebarFolders() {
@@ -317,36 +574,128 @@ void MainWindow::refreshSidebarFolders() {
     }
 
     auto folders = m_model->folders();
+
+    // Live playlist search (the magnifier in the header).
+    const QString needle = TextUtils::normalized(m_sidebarFilter);
+    if (!needle.isEmpty()) {
+        folders.erase(std::remove_if(folders.begin(), folders.end(),
+            [&needle](const Folder &f) { return !TextUtils::normalized(f.name).contains(needle); }),
+            folders.end());
+    }
+
+    // Sort mode, persisted like the per-playlist sort.
+    const QString sortMode = QSettings().value("sidebarSort", "recents").toString();
+    if (sortMode == "alpha") {
+        std::sort(folders.begin(), folders.end(), [](const Folder &a, const Folder &b) {
+            return TextUtils::normalized(a.name) < TextUtils::normalized(b.name);
+        });
+    } else if (sortMode == "added") {
+        std::sort(folders.begin(), folders.end(), [](const Folder &a, const Folder &b) {
+            return a.id > b.id;
+        });
+    } else {  // "recents": last played first; never-played keep creation order.
+        QHash<int, qint64> lastPlayed;
+        for (const auto &t : m_model->tracks())
+            if (t.folderId > 0 && t.lastPlayedAt > lastPlayed.value(t.folderId))
+                lastPlayed[t.folderId] = t.lastPlayedAt;
+        std::stable_sort(folders.begin(), folders.end(), [&lastPlayed](const Folder &a, const Folder &b) {
+            return lastPlayed.value(a.id) > lastPlayed.value(b.id);
+        });
+    }
+
+    const QString viewMode = QSettings().value("sidebarView", "list").toString();
+    auto isActiveFolder = [this](const Folder &f) {
+        return m_currentPage == "folder"
+            && m_folderDetailPage->property("folderName").toString() == f.name;
+    };
+    auto rowStyle = [](bool active) {
+        return QString(
+            "QPushButton { background: %1; border: none; border-radius: 8px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.05); }"
+        ).arg(active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"));
+    };
+
     if (folders.isEmpty()) {
-        auto *emptyLabel = new QLabel("Nenhuma playlist");
-        emptyLabel->setFont(Theme::bodyFont(11));
-        emptyLabel->setStyleSheet(QString("color: %1; background: transparent; padding: 4px 14px;").arg(Theme::textMuted().name()));
-        m_sidebarFoldersLayout->addWidget(emptyLabel);
-    } else {
-        for (auto &f : folders) {
-            int count = m_model->tracksInFolder(f.name).size();
+        if (!m_sidebarCollapsed) {
+            auto *emptyLabel = new QLabel(Lang::tr("Nenhuma playlist"));
+            emptyLabel->setFont(Theme::bodyFont(11));
+            emptyLabel->setStyleSheet(QString("color: %1; background: transparent; padding: 4px 14px;").arg(Theme::textMuted().name()));
+            m_sidebarFoldersLayout->addWidget(emptyLabel);
+        }
+    } else if (!m_sidebarCollapsed && viewMode == "grid") {
+        // Grid of covers with the name underneath, like Spotify's grid view.
+        auto *gridWidget = new QWidget();
+        gridWidget->setStyleSheet("background: transparent;");
+        auto *grid = new QGridLayout(gridWidget);
+        grid->setContentsMargins(0, 0, 0, 0);
+        grid->setSpacing(6);
+
+        const int availW = qMax(150, m_sidebar->width() - 34);
+        const int cols = qMax(2, availW / 104);
+        const int cellW = (availW - (cols - 1) * 6) / cols;
+
+        for (int i = 0; i < folders.size(); ++i) {
+            const Folder &f = folders[i];
+            auto tracks = m_model->tracksInFolder(f.name);
+
             auto *btn = new QPushButton();
             btn->setCursor(Qt::PointingHandCursor);
-            btn->setFixedHeight(34);
+            btn->setFixedSize(cellW, cellW + 16);
+            btn->setToolTip(f.name);
+
+            auto *cellLayout = new QVBoxLayout(btn);
+            cellLayout->setContentsMargins(6, 6, 6, 4);
+            cellLayout->setSpacing(4);
+            cellLayout->addWidget(CoverWidget::playlistCover(f, tracks, cellW - 12, 6), 0, Qt::AlignHCenter);
+
+            auto *nameLabel = new QLabel(QFontMetrics(Theme::bodyFont(10))
+                .elidedText(f.name, Qt::ElideRight, cellW - 12));
+            nameLabel->setFont(Theme::bodyFont(10));
+            nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+            cellLayout->addWidget(nameLabel, 0, Qt::AlignHCenter);
+
+            btn->setStyleSheet(rowStyle(isActiveFolder(f)));
+            QString folderName = f.name;
+            connect(btn, &QPushButton::clicked, [this, folderName]() { navigateTo("folder", folderName); });
+            grid->addWidget(btn, i / cols, i % cols);
+        }
+        grid->setColumnStretch(cols, 1);
+        m_sidebarFoldersLayout->addWidget(gridWidget);
+    } else {
+        const bool compact = !m_sidebarCollapsed && viewMode == "compact";
+        for (auto &f : folders) {
+            auto tracks = m_model->tracksInFolder(f.name);
+            auto *btn = new QPushButton();
+            btn->setCursor(Qt::PointingHandCursor);
+            btn->setFixedHeight(m_sidebarCollapsed ? 48 : (compact ? 30 : 42));
             btn->setFont(Theme::bodyFont(12));
 
             auto *btnLayout = new QHBoxLayout(btn);
-            btnLayout->setContentsMargins(14, 0, 14, 0);
-            auto *nameLabel = new QLabel(f.name);
-            nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
-            nameLabel->setFont(Theme::bodyFont(12));
-            auto *countLabel = new QLabel(QString::number(count));
-            countLabel->setFont(Theme::monoFont(10));
-            countLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
-            btnLayout->addWidget(nameLabel);
-            btnLayout->addStretch();
-            btnLayout->addWidget(countLabel);
+            // Small cover, like Spotify's sidebar (image > mosaic > gradient).
+            // Collapsed mode shows only the cover, centered, with the name as
+            // a tooltip. Compact mode drops the cover entirely.
+            if (m_sidebarCollapsed) {
+                btnLayout->setContentsMargins(0, 0, 0, 0);
+                btnLayout->setAlignment(Qt::AlignCenter);
+                btnLayout->addWidget(CoverWidget::playlistCover(f, tracks, 32, 5));
+                btn->setToolTip(f.name);
+            } else {
+                btnLayout->setContentsMargins(8, 0, 14, 0);
+                btnLayout->setSpacing(8);
+                if (!compact)
+                    btnLayout->addWidget(CoverWidget::playlistCover(f, tracks, 28, 5), 0, Qt::AlignVCenter);
+                auto *nameLabel = new QLabel(f.name);
+                nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+                nameLabel->setFont(Theme::bodyFont(12));
+                auto *countLabel = new QLabel(QString::number(tracks.size()));
+                countLabel->setFont(Theme::monoFont(10));
+                countLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+                btnLayout->addWidget(nameLabel);
+                btnLayout->addStretch();
+                btnLayout->addWidget(countLabel);
+            }
 
-            bool isActive = (m_currentPage == "folder" && m_folderDetailPage->property("folderName").toString() == f.name);
-            btn->setStyleSheet(QString(
-                "QPushButton { background: %1; border: none; border-radius: 8px; }"
-                "QPushButton:hover { background: rgba(255,255,255,0.05); }"
-            ).arg(isActive ? Theme::accentRgba(0.12) : QStringLiteral("transparent")));
+            btn->setStyleSheet(rowStyle(isActiveFolder(f)));
 
             QString folderName = f.name;
             connect(btn, &QPushButton::clicked, [this, folderName]() { navigateTo("folder", folderName); });
@@ -358,10 +707,70 @@ void MainWindow::refreshSidebarFolders() {
     m_sidebarFoldersLayout->addStretch();
 }
 
+void MainWindow::toggleSidebarSearch() {
+    const bool show = !m_sidebarSearchEdit->isVisible();
+    m_sidebarSearchEdit->setVisible(show);
+    if (show) {
+        m_sidebarSearchEdit->setFocus();
+    } else if (!m_sidebarFilter.isEmpty()) {
+        m_sidebarSearchEdit->clear();  // textChanged refreshes the list
+    }
+}
+
+void MainWindow::showSidebarSortMenu() {
+    auto *menu = new QMenu(this);
+    menu->setStyleSheet(QString(
+        "QMenu { background: %1; border: 1px solid %2; border-radius: 8px; padding: 4px; color: %3; }"
+        "QMenu::item { padding: 8px 16px; border-radius: 4px; }"
+        "QMenu::item:selected { background: %4; }"
+        "QMenu::item:disabled { color: %5; }"
+        "QMenu::separator { height: 1px; background: %2; margin: 4px 0; }"
+    ).arg(Theme::card().name(), Theme::border().name(), Theme::text().name(),
+          Theme::cardHover().name(), Theme::textMuted().name()));
+
+    QSettings settings;
+    const QString currentSort = settings.value("sidebarSort", "recents").toString();
+    const QString currentView = settings.value("sidebarView", "list").toString();
+
+    menu->addAction(Lang::tr("Ordenar por"))->setEnabled(false);
+    const QPair<QString, QString> sortModes[] = {
+        {"recents", Lang::tr("Recentes")},
+        {"added",   Lang::tr("Adicionadas recentemente")},
+        {"alpha",   Lang::tr("Alfabética")},
+    };
+    for (const auto &m : sortModes) {
+        QString label = (currentSort == m.first ? "✓ " : "   ") + m.second;
+        QString id = m.first;
+        menu->addAction(label, [this, id]() {
+            QSettings().setValue("sidebarSort", id);
+            refreshSidebarFolders();
+        });
+    }
+
+    menu->addSeparator();
+    menu->addAction(Lang::tr("Exibir como"))->setEnabled(false);
+    const QPair<QString, QString> viewModes[] = {
+        {"compact", Lang::tr("Compacta")},
+        {"list",    Lang::tr("Lista")},
+        {"grid",    Lang::tr("Grade")},
+    };
+    for (const auto &m : viewModes) {
+        QString label = (currentView == m.first ? "✓ " : "   ") + m.second;
+        QString id = m.first;
+        menu->addAction(label, [this, id]() {
+            QSettings().setValue("sidebarView", id);
+            refreshSidebarFolders();
+        });
+    }
+
+    menu->exec(QCursor::pos());
+    menu->deleteLater();
+}
+
 void MainWindow::showEditTrackDialog(const Track &track) {
     int id = track.id;
     auto *dlg = new QDialog(this);
-    dlg->setWindowTitle("Editar Música");
+    dlg->setWindowTitle(Lang::tr("Editar Música"));
     dlg->setFixedSize(380, 200);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setStyleSheet(QString(
@@ -376,14 +785,14 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     layout->setContentsMargins(20, 20, 20, 20);
     layout->setSpacing(10);
 
-    auto *titleLabel = new QLabel("Nome da música");
+    auto *titleLabel = new QLabel(Lang::tr("Nome da música"));
     titleLabel->setFont(Theme::bodyFont(12));
     layout->addWidget(titleLabel);
     auto *titleEdit = new QLineEdit(track.title);
     titleEdit->setFont(Theme::bodyFont(13));
     layout->addWidget(titleEdit);
 
-    auto *artistLabel = new QLabel("Artista");
+    auto *artistLabel = new QLabel(Lang::tr("Artista"));
     artistLabel->setFont(Theme::bodyFont(12));
     layout->addWidget(artistLabel);
     auto *artistEdit = new QLineEdit(track.artist);
@@ -392,7 +801,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
 
     auto *btnRow = new QHBoxLayout();
     btnRow->addStretch();
-    auto *cancelBtn = new QPushButton("Cancelar");
+    auto *cancelBtn = new QPushButton(Lang::tr("Cancelar"));
     cancelBtn->setFont(Theme::bodyFont(12));
     cancelBtn->setFixedHeight(36);
     cancelBtn->setCursor(Qt::PointingHandCursor);
@@ -403,7 +812,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     connect(cancelBtn, &QPushButton::clicked, dlg, &QDialog::reject);
     btnRow->addWidget(cancelBtn);
 
-    auto *saveBtn = new QPushButton("Salvar");
+    auto *saveBtn = new QPushButton(Lang::tr("Salvar"));
     saveBtn->setFont(Theme::bodyFont(12));
     saveBtn->setFixedHeight(36);
     saveBtn->setCursor(Qt::PointingHandCursor);
@@ -426,9 +835,9 @@ void MainWindow::showEditTrackDialog(const Track &track) {
 
 void MainWindow::confirmDeleteTrack(const Track &track) {
     auto *dlg = new QMessageBox(this);
-    dlg->setWindowTitle("Excluir Música");
-    dlg->setText(QString("Excluir \"%1\"?").arg(track.title));
-    dlg->setInformativeText("A música será removida da biblioteca.");
+    dlg->setWindowTitle(Lang::tr("Excluir Música"));
+    dlg->setText(QString(Lang::tr("Excluir \"%1\"?")).arg(track.title));
+    dlg->setInformativeText(Lang::tr("A música será removida da biblioteca."));
     dlg->setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
     dlg->setDefaultButton(QMessageBox::Cancel);
     dlg->setStyleSheet(QString(
@@ -480,15 +889,18 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
 void MainWindow::navigateTo(const QString &page, const QString &data) {
     m_currentPage = page;
 
-    // Update nav button styles
-    auto activeStyle = [](bool active) {
+    // Update nav button styles (centered icons in collapsed mode)
+    auto activeStyle = [this](bool active) {
+        const QString align = m_sidebarCollapsed
+            ? QStringLiteral("text-align: center; padding-left: 0px;")
+            : QStringLiteral("text-align: left; padding-left: 14px;");
         if (active) {
             return QString(
-                "QPushButton { background: " + Theme::accentRgba(0.15) + "; color: %1; border: none; border-radius: 10px; text-align: left; padding-left: 14px; font-weight: bold; }"
+                "QPushButton { background: " + Theme::accentRgba(0.15) + "; color: %1; border: none; border-radius: 10px; " + align + " font-weight: bold; }"
             ).arg(Theme::accent().name());
         }
         return QString(
-            "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; text-align: left; padding-left: 14px; }"
+            "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; " + align + " }"
             "QPushButton:hover { background: rgba(255,255,255,0.05); color: %2; }"
         ).arg(Theme::textSoft().name(), Theme::text().name());
     };
@@ -510,7 +922,7 @@ void MainWindow::navigateTo(const QString &page, const QString &data) {
         m_stack->setCurrentIndex(3);
     } else if (page == "liked") {
         m_stack->setCurrentIndex(4);
-    } else if (page == "queue") {
+    } else if (page == "search") {
         m_stack->setCurrentIndex(5);
     }
 
@@ -531,8 +943,12 @@ void MainWindow::refreshCurrentPage() {
     } else if (m_stack->currentIndex() == 4) {
         m_likedPage->refresh(curId, playing);
     } else if (m_stack->currentIndex() == 5) {
-        m_queuePage->refresh(curId, playing);
+        m_searchPage->refresh(curId, playing);
     }
+
+    // The queue side panel lives outside the stack; keep it live while open.
+    if (m_queuePage && m_queuePage->isVisible())
+        m_queuePage->refresh(curId, playing);
 }
 
 void MainWindow::onTrackPlay(const Track &track) {
@@ -540,9 +956,8 @@ void MainWindow::onTrackPlay(const Track &track) {
     // each playlist plays within itself instead of the whole library.
     QList<Track> queue;
     if (m_currentPage == "folder") {
-        QString fname = m_folderDetailPage->property("folderName").toString();
-        queue = fname.isEmpty() ? m_model->standaloneTracks()
-                                : m_model->tracksInFolder(fname);
+        // Use the page's displayed order so next/prev follow the sort mode.
+        queue = m_folderDetailPage->displayedTracks();
     } else if (m_currentPage == "liked") {
         queue = m_model->likedTracks();
     } else {
@@ -552,9 +967,58 @@ void MainWindow::onTrackPlay(const Track &track) {
     refreshCurrentPage();
 }
 
+void MainWindow::showLanguagePicker() {
+    auto *dlg = new QDialog(this);
+    dlg->setWindowTitle(Lang::tr("Idioma"));
+    dlg->setFixedSize(280, 150);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setStyleSheet(QString(
+        "QDialog { background: %1; }"
+        "QLabel  { background: transparent; color: %2; }"
+    ).arg(Theme::surface().name(), Theme::text().name()));
+
+    auto *layout = new QVBoxLayout(dlg);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(8);
+
+    auto *title = new QLabel(Lang::tr("Idioma"));
+    title->setFont(Theme::titleFont(14));
+    layout->addWidget(title);
+
+    struct Option { const char *id; const char *label; };
+    const Option options[] = { {"pt", "Português"}, {"en", "English"} };
+
+    for (const auto &opt : options) {
+        bool active = (Lang::activeLang() == opt.id);
+        auto *btn = new QPushButton(opt.label);
+        btn->setFixedHeight(38);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFont(Theme::bodyFont(12));
+        btn->setStyleSheet(QString(
+            "QPushButton { background: %1; color: %2; border: 1px solid %3; border-radius: 10px; font-weight: bold; }"
+            "QPushButton:hover { border-color: %4; }"
+        ).arg(active ? Theme::accentRgba(0.15) : Theme::card().name(),
+              active ? Theme::accent().name() : Theme::text().name(),
+              active ? Theme::accent().name() : Theme::border().name(),
+              Theme::accent().name()));
+
+        QString id = opt.id;
+        connect(btn, &QPushButton::clicked, dlg, [this, id, dlg]() {
+            QSettings s;
+            s.setValue("language", id);
+            dlg->accept();
+            // Same restart path as switching themes.
+            emit themeChangeRequested();
+        });
+        layout->addWidget(btn);
+    }
+
+    dlg->exec();
+}
+
 void MainWindow::showThemePicker() {
     auto *dlg = new QDialog(this);
-    dlg->setWindowTitle("Escolher Tema");
+    dlg->setWindowTitle(Lang::tr("Escolher Tema"));
     dlg->setFixedSize(356, 290);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setStyleSheet(QString(
@@ -566,7 +1030,7 @@ void MainWindow::showThemePicker() {
     layout->setContentsMargins(16, 16, 16, 16);
     layout->setSpacing(12);
 
-    auto *title = new QLabel("Paleta de Cores");
+    auto *title = new QLabel(Lang::tr("Paleta de Cores"));
     title->setFont(Theme::titleFont(14));
     layout->addWidget(title);
 
@@ -600,7 +1064,7 @@ void MainWindow::showThemePicker() {
         btnLayout->setAlignment(Qt::AlignCenter);
         btnLayout->setContentsMargins(0, 0, 0, 0);
 
-        auto *nameLabel = new QLabel(t.name);
+        auto *nameLabel = new QLabel(Lang::tr(t.name));
         nameLabel->setFont(Theme::bodyFont(10));
         nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(t.text.name()));
         nameLabel->setAlignment(Qt::AlignCenter);

@@ -14,7 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # --- Qt ---------------------------------------------------------------------
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia Sql)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia Sql Network)
 
 # Runs moc/uic automatically (equivalent to qmake's built-in handling).
 qt_standard_project_setup()
@@ -36,6 +36,8 @@ set(PROJECT_SOURCES
     src/pages/folderdetailpage.cpp
     src/pages/likedpage.cpp
     src/pages/queuepage.cpp
+    src/pages/searchpage.cpp
+    src/pages/importplaylistdialog.cpp
     src/player/playerbar.cpp
     src/player/trackmodel.cpp
     src/widgets/vinylwidget.cpp
@@ -51,6 +53,8 @@ set(PROJECT_HEADERS
     src/pages/folderdetailpage.h
     src/pages/likedpage.h
     src/pages/queuepage.h
+    src/pages/searchpage.h
+    src/pages/importplaylistdialog.h
     src/player/playerbar.h
     src/player/trackmodel.h
     src/widgets/vinylwidget.h
@@ -58,6 +62,10 @@ set(PROJECT_HEADERS
     src/widgets/theme.h
     src/widgets/hoverplayfilter.h
     src/widgets/reorderablelist.h
+    src/widgets/mediatools.h
+    src/widgets/lang.h
+    src/widgets/coverwidget.h
+    src/widgets/textutils.h
 )
 
 qt_add_executable(LumenMusic
@@ -80,6 +88,7 @@ target_link_libraries(LumenMusic PRIVATE
     Qt6::Widgets
     Qt6::Multimedia
     Qt6::Sql
+    Qt6::Network
 )
 
 # --- Windows-specific: icon, version metadata, GUI subsystem ----------------

@@ -23,6 +23,8 @@ signals:
 private:
     QWidget *createTrackRow(const Track &track, int index, int currentId, bool isPlaying);
     QWidget *createFolderChip(const Folder &folder, int trackCount);
+    QWidget *createChipCover(const Folder &folder);
+    QWidget *createRecentCard(const Folder &folder);
 
     TrackModel *m_model;
     QVBoxLayout *m_contentLayout;

@@ -1,4 +1,4 @@
-QT       += core gui widgets multimedia sql
+QT       += core gui widgets multimedia sql network
 
 TARGET = LumenMusic
 TEMPLATE = app
@@ -49,6 +49,8 @@ SOURCES += \
     src/pages/folderdetailpage.cpp \
     src/pages/likedpage.cpp \
     src/pages/queuepage.cpp \
+    src/pages/searchpage.cpp \
+    src/pages/importplaylistdialog.cpp \
     src/player/playerbar.cpp \
     src/player/trackmodel.cpp \
     src/widgets/vinylwidget.cpp \
@@ -63,6 +65,8 @@ HEADERS += \
     src/pages/folderdetailpage.h \
     src/pages/likedpage.h \
     src/pages/queuepage.h \
+    src/pages/searchpage.h \
+    src/pages/importplaylistdialog.h \
     src/player/playerbar.h \
     src/player/trackmodel.h \
     src/widgets/vinylwidget.h \
@@ -70,6 +74,10 @@ HEADERS += \
     src/widgets/theme.h \
     src/widgets/hoverplayfilter.h \
     src/widgets/reorderablelist.h \
+    src/widgets/mediatools.h \
+    src/widgets/lang.h \
+    src/widgets/coverwidget.h \
+    src/widgets/textutils.h \
     src/widgets/lumenlogo.h
 
 RESOURCES += \

@@ -1,5 +1,6 @@
 #include "trackmodel.h"
 #include "database.h"
+#include "mediatools.h"
 #include <QRandomGenerator>
 #include <algorithm>
 
@@ -11,11 +12,14 @@ TrackModel::TrackModel(QObject *parent) : QObject(parent) {
 QList<Track> &TrackModel::tracks() { return m_tracks; }
 const QList<Track> &TrackModel::tracks() const { return m_tracks; }
 
-void TrackModel::addTrack(const Track &track) {
+int TrackModel::addTrack(const Track &track) {
     int folderId = 0;
     if (!track.folder.isEmpty()) {
         folderId = Database::instance().findOrCreateFolder(
             track.folder, track.cover.c1, track.cover.c2);
+        // Keep a matching folder on disk under the downloads root so the
+        // playlist's files are easy to locate.
+        MediaTools::playlistDir(track.folder);
     }
 
     int newId = Database::instance().insertTrack(track, folderId);
@@ -25,6 +29,7 @@ void TrackModel::addTrack(const Track &track) {
     t.folderId = folderId;
     m_tracks.prepend(t);
     emit tracksChanged();
+    return newId;
 }
 
 void TrackModel::removeTrack(int id) {
@@ -97,9 +102,14 @@ QList<Track> TrackModel::tracksInFolder(const QString &folderName) const {
     for (auto &t : m_tracks) {
         if (t.folder == folderName) result.append(t);
     }
-    // Honour the playlist's custom order.
+    // Honour the playlist's custom order. Tracks added in the same batch can
+    // share the same timestamp position, so break ties by id — otherwise the
+    // unstable sort reshuffles them on every refresh.
     std::sort(result.begin(), result.end(),
-        [](const Track &a, const Track &b) { return a.position < b.position; });
+        [](const Track &a, const Track &b) {
+            return a.position != b.position ? a.position < b.position
+                                            : a.id < b.id;
+        });
     return result;
 }
 
@@ -135,10 +145,29 @@ QList<Track> TrackModel::recentlyPlayed(int count) const {
     return played.mid(0, count);
 }
 
+QList<Folder> TrackModel::recentlyPlayedFolders(int count) const {
+    QList<QPair<qint64, Folder>> played;
+    for (const auto &f : folders()) {
+        qint64 last = 0;
+        for (const auto &t : m_tracks)
+            if (t.folderId == f.id && t.lastPlayedAt > last) last = t.lastPlayedAt;
+        if (last > 0) played.append({last, f});
+    }
+    std::sort(played.begin(), played.end(),
+        [](const QPair<qint64, Folder> &a, const QPair<qint64, Folder> &b) {
+            return a.first > b.first;
+        });
+    QList<Folder> result;
+    for (int i = 0; i < played.size() && i < count; ++i) result.append(played[i].second);
+    return result;
+}
+
 int TrackModel::createPlaylist(const QString &name, const QColor &c1, const QColor &c2,
                                const QString &coverImage) {
     QString stored = Database::importCoverImage(coverImage);
     int id = Database::instance().createFolder(name, c1, c2, stored);
+    // Every playlist gets a matching folder under the downloads root.
+    MediaTools::playlistDir(name);
     emit tracksChanged();
     return id;
 }

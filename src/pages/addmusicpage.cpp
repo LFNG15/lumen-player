@@ -1,4 +1,5 @@
 #include "addmusicpage.h"
+#include "lang.h"
 #include <QLabel>
 #include <QFileDialog>
 #include <QDragEnterEvent>
@@ -18,6 +19,8 @@
 #include <QProcessEnvironment>
 #include <QSettings>
 #include <algorithm>
+#include "importplaylistdialog.h"
+#include "mediatools.h"
 
 AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     : QWidget(parent), m_model(model)
@@ -48,12 +51,12 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     connect(backBtn, &QPushButton::clicked, this, &AddMusicPage::navigateBack);
     layout->addWidget(backBtn, 0, Qt::AlignLeft);
 
-    auto *title = new QLabel("Inserção de Músicas");
+    auto *title = new QLabel(Lang::tr("Inserção de Músicas"));
     title->setFont(Theme::titleFont(28));
     title->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
     layout->addWidget(title);
 
-    auto *subtitle = new QLabel("Arraste seus arquivos de áudio ou clique para selecionar");
+    auto *subtitle = new QLabel(Lang::tr("Arraste seus arquivos de áudio ou clique para selecionar"));
     subtitle->setFont(Theme::bodyFont(13));
     subtitle->setStyleSheet(QString("color: %1; background: transparent; padding-bottom: 12px;").arg(Theme::textSoft().name()));
     layout->addWidget(subtitle);
@@ -89,7 +92,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
             Theme::border().name(), Theme::accent().name()));
     urlRow->addWidget(m_urlEdit, 1);
 
-    m_downloadBtn = new QPushButton("Baixar");
+    m_downloadBtn = new QPushButton(Lang::tr("Baixar"));
     m_downloadBtn->setFixedSize(80, 36);
     m_downloadBtn->setCursor(Qt::PointingHandCursor);
     m_downloadBtn->setFont(Theme::bodyFont(12));
@@ -117,7 +120,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     m_downloadFolderLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     downloadFolderRow->addWidget(m_downloadFolderLabel, 1);
 
-    auto *changeFolderBtn = new QPushButton("Alterar");
+    auto *changeFolderBtn = new QPushButton(Lang::tr("Alterar"));
     changeFolderBtn->setCursor(Qt::PointingHandCursor);
     changeFolderBtn->setFont(Theme::bodyFont(11));
     changeFolderBtn->setStyleSheet(QString(
@@ -139,6 +142,57 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
 
     layout->addWidget(urlCard);
 
+    // ── Streaming playlist import card ──────────────────────
+    auto *importCard = new QWidget();
+    importCard->setObjectName("importCard");
+    importCard->setStyleSheet(QString("QWidget#importCard { background: %1; border-radius: 12px; }")
+        .arg(Theme::card().name()));
+
+    auto *importCardLayout = new QVBoxLayout(importCard);
+    importCardLayout->setContentsMargins(16, 14, 16, 14);
+    importCardLayout->setSpacing(8);
+
+    auto *importHeader = new QLabel(QString("  ") + Lang::tr("Converter playlist de streaming"));
+    importHeader->setFont(Theme::bodyFont(12));
+    importHeader->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\";")
+        .arg(Theme::accent().name()));
+    importCardLayout->addWidget(importHeader);
+
+    auto *importHint = new QLabel(Lang::tr("Cole o link de uma playlist do Spotify ou do YouTube para trazê-la para o Lumen Music."));
+    importHint->setFont(Theme::bodyFont(11));
+    importHint->setWordWrap(true);
+    importHint->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    importCardLayout->addWidget(importHint);
+
+    auto *importRow = new QHBoxLayout();
+    importRow->setSpacing(8);
+
+    m_importUrlEdit = new QLineEdit();
+    m_importUrlEdit->setPlaceholderText("https://open.spotify.com/playlist/...");
+    m_importUrlEdit->setFont(Theme::bodyFont(12));
+    m_importUrlEdit->setStyleSheet(m_urlEdit->styleSheet());
+    importRow->addWidget(m_importUrlEdit, 1);
+
+    auto *importBtn = new QPushButton(Lang::tr("Importar"));
+    importBtn->setFixedSize(80, 36);
+    importBtn->setCursor(Qt::PointingHandCursor);
+    importBtn->setFont(Theme::bodyFont(12));
+    importBtn->setStyleSheet(m_downloadBtn->styleSheet());
+    connect(importBtn, &QPushButton::clicked, this, &AddMusicPage::startPlaylistImport);
+    connect(m_importUrlEdit, &QLineEdit::returnPressed, this, &AddMusicPage::startPlaylistImport);
+    importRow->addWidget(importBtn);
+
+    importCardLayout->addLayout(importRow);
+
+    m_importStatus = new QLabel();
+    m_importStatus->setFont(Theme::bodyFont(11));
+    m_importStatus->setWordWrap(true);
+    m_importStatus->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::danger().name()));
+    m_importStatus->hide();
+    importCardLayout->addWidget(m_importStatus);
+
+    layout->addWidget(importCard);
+
     // Drop zone
     m_dropZone = new QWidget();
     m_dropZone->setFixedHeight(180);
@@ -157,7 +211,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     uploadIcon->setAlignment(Qt::AlignCenter);
     dropLayout->addWidget(uploadIcon);
 
-    m_dropLabel = new QLabel("Clique ou arraste arquivos de áudio");
+    m_dropLabel = new QLabel(Lang::tr("Clique ou arraste arquivos de áudio"));
     m_dropLabel->setFont(Theme::bodyFont(14));
     m_dropLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     m_dropLabel->setAlignment(Qt::AlignCenter);
@@ -175,7 +229,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     layout->addWidget(m_dropZone);
 
     // Browse button
-    auto *browseBtn = new QPushButton("Procurar Arquivos");
+    auto *browseBtn = new QPushButton(Lang::tr("Procurar Arquivos"));
     browseBtn->setFixedSize(180, 40);
     browseBtn->setCursor(Qt::PointingHandCursor);
     browseBtn->setFont(Theme::bodyFont(13));
@@ -184,8 +238,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
         "QPushButton:hover { background: %4; }"
     ).arg(Theme::card().name(), Theme::textSoft().name(), Theme::border().name(), Theme::cardHover().name()));
     connect(browseBtn, &QPushButton::clicked, [this]() {
-        QStringList files = QFileDialog::getOpenFileNames(this, "Selecionar Músicas", QString(),
-            "Áudio (*.opus *.webm *.m4a *.mp3 *.ogg *.oga *.flac *.wav *.aac)");
+        QStringList files = QFileDialog::getOpenFileNames(this, Lang::tr("Selecionar Músicas"), QString(),
+            Lang::tr("Áudio (*.opus *.webm *.m4a *.mp3 *.ogg *.oga *.flac *.wav *.aac)"));
         if (!files.isEmpty()) processFiles(files);
     });
     layout->addWidget(browseBtn, 0, Qt::AlignLeft);
@@ -207,7 +261,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     folderLayout->setContentsMargins(0, 0, 0, 0);
     folderLayout->setSpacing(8);
 
-    auto *folderLabel = new QLabel("PLAYLIST DE DESTINO");
+    auto *folderLabel = new QLabel(Lang::tr("PLAYLIST DE DESTINO"));
     folderLabel->setFont(Theme::bodyFont(11));
     folderLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;").arg(Theme::textSoft().name()));
     folderLayout->addWidget(folderLabel);
@@ -234,7 +288,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     folderRow->addWidget(m_folderCombo);
 
     m_newFolderEdit = new QLineEdit();
-    m_newFolderEdit->setPlaceholderText("Nova playlist...");
+    m_newFolderEdit->setPlaceholderText(Lang::tr("Nova playlist..."));
     m_newFolderEdit->setFont(Theme::bodyFont(13));
     m_newFolderEdit->setMinimumWidth(160);
     m_newFolderEdit->setStyleSheet(QString(R"(
@@ -249,7 +303,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
 
     folderLayout->addLayout(folderRow);
 
-    m_addBtn = new QPushButton("Adicionar à Biblioteca");
+    m_addBtn = new QPushButton(Lang::tr("Adicionar à Biblioteca"));
     m_addBtn->setFont(Theme::bodyFont(14));
     m_addBtn->setFixedHeight(46);
     m_addBtn->setMinimumWidth(220);
@@ -288,7 +342,7 @@ void AddMusicPage::refresh() {
     if (m_urlEdit) m_urlEdit->clear();
 
     m_folderCombo->clear();
-    m_folderCombo->addItem("Sem playlist");
+    m_folderCombo->addItem(Lang::tr("Sem playlist"));
     auto folders = m_model->folders();
     for (auto &f : folders) {
         m_folderCombo->addItem(f.name);
@@ -302,7 +356,7 @@ void AddMusicPage::dragEnterEvent(QDragEnterEvent *event) {
         m_dropZone->setStyleSheet(QString(
             "QWidget { border: 2px dashed %1; border-radius: 16px; background: %2; }"
         ).arg(Theme::accent().name(), Theme::accentRgba(0.12)));
-        m_dropLabel->setText("Solte os arquivos aqui");
+        m_dropLabel->setText(Lang::tr("Solte os arquivos aqui"));
     }
 }
 
@@ -311,7 +365,7 @@ void AddMusicPage::dropEvent(QDropEvent *event) {
     m_dropZone->setStyleSheet(QString(
         "QWidget { border: 2px dashed %1; border-radius: 16px; background: rgba(255,255,255,0.01); }"
     ).arg(Theme::border().name()));
-    m_dropLabel->setText("Clique ou arraste arquivos de áudio");
+    m_dropLabel->setText(Lang::tr("Clique ou arraste arquivos de áudio"));
 
     QStringList paths;
     for (auto &url : event->mimeData()->urls()) {
@@ -325,18 +379,11 @@ void AddMusicPage::dragLeaveEvent(QDragLeaveEvent *) {
     m_dropZone->setStyleSheet(QString(
         "QWidget { border: 2px dashed %1; border-radius: 16px; background: rgba(255,255,255,0.01); }"
     ).arg(Theme::border().name()));
-    m_dropLabel->setText("Clique ou arraste arquivos de áudio");
+    m_dropLabel->setText(Lang::tr("Clique ou arraste arquivos de áudio"));
 }
 
-// Audio extensions the app accepts. Opus is the preferred format, but the Qt
-// ffmpeg multimedia backend (bundled) also plays these — so YouTube downloads
-// can land as native .webm/Opus or .m4a/AAC when ffmpeg isn't installed to
-// remux them into a clean .opus.
-static const QStringList kAudioExts =
-    {"opus", "webm", "m4a", "mp3", "ogg", "oga", "flac", "wav", "aac"};
-
 void AddMusicPage::processFiles(const QStringList &paths) {
-    const QStringList &audioExts = kAudioExts;
+    const QStringList &audioExts = MediaTools::audioExts();
 
     for (auto &path : paths) {
         QFileInfo fi(path);
@@ -356,7 +403,7 @@ void AddMusicPage::processFiles(const QStringList &paths) {
             pf.title = parts.mid(1).join(" - ").trimmed();
         } else {
             pf.title = baseName;
-            pf.artist = "Desconhecido";
+            pf.artist = Lang::tr("Desconhecido");
         }
 
         m_pendingFiles.append(pf);
@@ -382,9 +429,8 @@ void AddMusicPage::refreshFileList() {
     m_fileListContainer->show();
     m_folderSection->show();
 
-    auto *header = new QLabel(QString("%1 arquivo%2 selecionado%3")
+    auto *header = new QLabel(QString(Lang::tr("%1 arquivo%2 selecionado%2"))
         .arg(m_pendingFiles.size())
-        .arg(m_pendingFiles.size() > 1 ? "s" : "")
         .arg(m_pendingFiles.size() > 1 ? "s" : ""));
     header->setFont(Theme::bodyFont(14));
     header->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; padding-top: 8px;").arg(Theme::text().name()));
@@ -428,13 +474,13 @@ void AddMusicPage::refreshFileList() {
         // Title field
         auto *titleRow = new QVBoxLayout();
         titleRow->setSpacing(2);
-        auto *titleLabel = new QLabel("Nome da música");
+        auto *titleLabel = new QLabel(Lang::tr("Nome da música"));
         titleLabel->setFont(Theme::bodyFont(10));
         titleLabel->setStyleSheet(labelStyle);
         auto *titleEdit = new QLineEdit(pf.title);
         titleEdit->setFont(Theme::bodyFont(12));
         titleEdit->setStyleSheet(inputStyle);
-        titleEdit->setPlaceholderText("Título da música");
+        titleEdit->setPlaceholderText(Lang::tr("Título da música"));
         int idx = i;
         connect(titleEdit, &QLineEdit::textChanged, [this, idx](const QString &text) {
             if (idx < m_pendingFiles.size()) m_pendingFiles[idx].title = text;
@@ -446,13 +492,13 @@ void AddMusicPage::refreshFileList() {
         // Artist field
         auto *artistRow = new QVBoxLayout();
         artistRow->setSpacing(2);
-        auto *artistLabel = new QLabel("Nome do artista");
+        auto *artistLabel = new QLabel(Lang::tr("Nome do artista"));
         artistLabel->setFont(Theme::bodyFont(10));
         artistLabel->setStyleSheet(labelStyle);
         auto *artistEdit = new QLineEdit(pf.artist);
         artistEdit->setFont(Theme::bodyFont(12));
         artistEdit->setStyleSheet(inputStyle);
-        artistEdit->setPlaceholderText("Nome do artista");
+        artistEdit->setPlaceholderText(Lang::tr("Nome do artista"));
         connect(artistEdit, &QLineEdit::textChanged, [this, idx](const QString &text) {
             if (idx < m_pendingFiles.size()) m_pendingFiles[idx].artist = text;
         });
@@ -494,53 +540,18 @@ void AddMusicPage::refreshFileList() {
         m_fileListLayout->addWidget(card);
     }
 
-    m_addBtn->setText(QString("Adicionar %1 Música%2")
+    m_addBtn->setText(QString(Lang::tr("Adicionar %1 Música%2"))
         .arg(m_pendingFiles.size())
         .arg(m_pendingFiles.size() > 1 ? "s" : ""));
 }
 
-static QString findFfmpeg() {
-    QString found = QStandardPaths::findExecutable("ffmpeg");
-    if (!found.isEmpty()) return found;
-
-    QString localAppData = qgetenv("LOCALAPPDATA");
-    QString userProfile  = qgetenv("USERPROFILE");
-
-    QStringList candidates;
-
-    // WinGet (Gyan.FFmpeg)
-    QDir winget(localAppData + "/Microsoft/WinGet/Packages");
-    for (const auto &pkg : winget.entryList({"Gyan.FFmpeg*"}, QDir::Dirs)) {
-        QDir pkgDir(winget.filePath(pkg));
-        for (const auto &sub : pkgDir.entryList({"ffmpeg*"}, QDir::Dirs))
-            candidates << pkgDir.filePath(sub) + "/bin/ffmpeg.exe";
-    }
-
-    // Scoop
-    candidates << userProfile + "/scoop/apps/ffmpeg/current/bin/ffmpeg.exe";
-    // Chocolatey
-    candidates << "C:/ProgramData/chocolatey/bin/ffmpeg.exe";
-    // Manual
-    candidates << "C:/ffmpeg/bin/ffmpeg.exe";
-
-    for (const auto &c : candidates)
-        if (QFile::exists(c)) return c;
-    return {};
-}
-
 QString AddMusicPage::downloadDir() const {
-    QSettings settings;
-    QString fallback =
-        QStandardPaths::writableLocation(QStandardPaths::MusicLocation) + "/Lumen Music";
-    QString dir = settings.value("downloadDir").toString();
-    if (dir.isEmpty()) dir = fallback;
-    QDir().mkpath(dir);
-    return dir;
+    return MediaTools::downloadDir();
 }
 
 void AddMusicPage::chooseDownloadFolder() {
     QString dir = QFileDialog::getExistingDirectory(
-        this, "Escolher pasta de downloads", downloadDir());
+        this, Lang::tr("Escolher pasta de downloads"), downloadDir());
     if (dir.isEmpty()) return;            // user cancelled
     QSettings().setValue("downloadDir", dir);
     updateDownloadFolderLabel();
@@ -549,7 +560,7 @@ void AddMusicPage::chooseDownloadFolder() {
 void AddMusicPage::updateDownloadFolderLabel() {
     if (m_downloadFolderLabel)
         m_downloadFolderLabel->setText(
-            "Salvar em: " + QDir::toNativeSeparators(downloadDir()));
+            Lang::tr("Salvar em: ") + QDir::toNativeSeparators(downloadDir()));
 }
 
 void AddMusicPage::startDownload() {
@@ -560,7 +571,7 @@ void AddMusicPage::startDownload() {
 
     if (!url.contains("youtube.com") && !url.contains("youtu.be")) {
         m_downloadStatus->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::danger().name()));
-        m_downloadStatus->setText("Use um link do YouTube (youtube.com ou youtu.be).");
+        m_downloadStatus->setText(Lang::tr("Use um link do YouTube (youtube.com ou youtu.be)."));
         m_downloadStatus->show();
         return;
     }
@@ -573,7 +584,7 @@ void AddMusicPage::startDownload() {
     m_downloadBtn->setEnabled(false);
     m_lastDownloadOutput.clear();
     m_downloadStatus->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
-    m_downloadStatus->setText("Conectando...");
+    m_downloadStatus->setText(Lang::tr("Conectando..."));
     m_downloadStatus->show();
 
     m_downloadProcess = new QProcess(this);
@@ -590,10 +601,10 @@ void AddMusicPage::startDownload() {
             QRegularExpression re(R"((\d+\.?\d*)%)");
             auto match = re.match(out);
             m_downloadStatus->setText(match.hasMatch()
-                ? QString("Baixando... %1%").arg(match.captured(1))
-                : "Baixando...");
+                ? QString(Lang::tr("Baixando... %1%")).arg(match.captured(1))
+                : Lang::tr("Baixando..."));
         } else if (out.contains("ExtractAudio") || out.contains("ffmpeg")) {
-            m_downloadStatus->setText("Convertendo para Opus...");
+            m_downloadStatus->setText(Lang::tr("Convertendo para Opus..."));
         }
     });
 
@@ -602,7 +613,7 @@ void AddMusicPage::startDownload() {
             m_downloadProcess = nullptr;
             m_downloadBtn->setEnabled(true);
             m_downloadStatus->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::danger().name()));
-            m_downloadStatus->setText("yt-dlp não encontrado. Instale com: pip install yt-dlp");
+            m_downloadStatus->setText(Lang::tr("yt-dlp não encontrado. Instale com: pip install yt-dlp"));
         }
     });
 
@@ -614,9 +625,9 @@ void AddMusicPage::startDownload() {
         if (exitCode != 0 || exitStatus != QProcess::NormalExit) {
             m_downloadStatus->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::danger().name()));
             QString detail = m_lastDownloadOutput.isEmpty()
-                ? "Verifique o link ou tente novamente."
+                ? Lang::tr("Verifique o link ou tente novamente.")
                 : m_lastDownloadOutput;
-            m_downloadStatus->setText("Erro: " + detail);
+            m_downloadStatus->setText(Lang::tr("Erro: ") + detail);
             m_downloadStatus->setWordWrap(true);
             return;
         }
@@ -627,40 +638,32 @@ void AddMusicPage::startDownload() {
         // the native stream (.webm/.m4a), so accept any known audio extension.
         QStringList added;
         for (const auto &f : QDir(outDir).entryList({m_downloadPrefix + "_*"}, QDir::Files)) {
-            if (kAudioExts.contains(QFileInfo(f).suffix().toLower()))
+            if (MediaTools::audioExts().contains(QFileInfo(f).suffix().toLower()))
                 added.append(outDir + "/" + f);
         }
 
         if (added.isEmpty()) {
             m_downloadStatus->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::danger().name()));
-            m_downloadStatus->setText("Download concluído, mas nenhum arquivo de áudio encontrado.");
+            m_downloadStatus->setText(Lang::tr("Download concluído, mas nenhum arquivo de áudio encontrado."));
             return;
         }
 
         m_downloadStatus->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::accent().name()));
-        m_downloadStatus->setText(QString("Concluído! %1 arquivo%2 pronto%3 para adicionar.")
+        m_downloadStatus->setText(QString(Lang::tr("Concluído! %1 arquivo%2 pronto%2 para adicionar."))
             .arg(added.size())
-            .arg(added.size() > 1 ? "s" : "")
             .arg(added.size() > 1 ? "s" : ""));
         m_urlEdit->clear();
         processFiles(added);
     });
 
 
-    const QString appDir = QCoreApplication::applicationDirPath();
-    QString ytDlp;
-    for (const QString &candidate : {
-             QDir(appDir).filePath("yt-dlp.exe"),
-             QDir(appDir).filePath("../yt-dlp.exe") }) {
-        if (QFileInfo::exists(candidate)) { ytDlp = QDir::cleanPath(candidate); break; }
-    }
-
+    const QString ytDlp = MediaTools::findYtDlp();
     if (ytDlp.isEmpty()) {
         m_downloadProcess->deleteLater();
         m_downloadProcess = nullptr;
         m_downloadBtn->setEnabled(true);
         m_downloadStatus->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::danger().name()));
-        m_downloadStatus->setText("yt-dlp não encontrado. Verifique sua pasta de instalação.");
+        m_downloadStatus->setText(Lang::tr("yt-dlp não encontrado. Verifique sua pasta de instalação."));
         m_downloadStatus->show();
         return;
     }
@@ -673,28 +676,30 @@ void AddMusicPage::startDownload() {
     //                      when offered, otherwise bestaudio). It plays fine via
     //                      Qt's ffmpeg multimedia backend.
     const QString outTemplate = outDir + "/" + m_downloadPrefix + "_%(title)s.%(ext)s";
-    const QString ffmpeg = findFfmpeg();
+    m_downloadProcess->start(ytDlp, MediaTools::downloadArgs(url, outTemplate));
+}
 
-    QStringList args;
-    if (!ffmpeg.isEmpty()) {
-        args = {
-            "-x",
-            "--audio-format", "opus",
-            "--audio-quality", "0",
-            "--ffmpeg-location", ffmpeg,
-            "--no-playlist",
-            "-o", outTemplate,
-            url
-        };
-    } else {
-        args = {
-            "-f", "bestaudio[acodec=opus]/bestaudio",
-            "--no-playlist",
-            "-o", outTemplate,
-            url
-        };
+void AddMusicPage::startPlaylistImport() {
+    QString url = m_importUrlEdit->text().trimmed();
+    if (url.isEmpty()) return;
+
+    if (!ImportPlaylistDialog::canImport(url)) {
+        m_importStatus->setText(Lang::tr("Use o link de uma playlist do Spotify (open.spotify.com/playlist/...) ou do YouTube (com \"list=\")."));
+        m_importStatus->show();
+        return;
     }
-    m_downloadProcess->start(ytDlp, args);
+
+    m_importStatus->hide();
+    auto *dlg = new ImportPlaylistDialog(m_model, url, this);
+    connect(dlg, &QDialog::finished, this, [this](int) {
+        m_importUrlEdit->clear();
+        // Repopulate the destination-playlist combo so a freshly imported
+        // playlist shows up without leaving the page.
+        m_folderCombo->clear();
+        m_folderCombo->addItem(Lang::tr("Sem playlist"));
+        for (auto &f : m_model->folders()) m_folderCombo->addItem(f.name);
+    });
+    dlg->exec();
 }
 
 void AddMusicPage::addAllToLibrary() {
@@ -703,11 +708,24 @@ void AddMusicPage::addAllToLibrary() {
     QString folder = m_newFolderEdit->text().trimmed();
     if (folder.isEmpty()) {
         folder = m_folderCombo->currentText();
-        if (folder == "Sem playlist") folder = "";
+        if (folder == Lang::tr("Sem playlist")) folder = "";
     }
 
+    // Files freshly downloaded into the downloads root move into the chosen
+    // playlist's subfolder, so each playlist's music stays together on disk.
+    // Files the user picked from elsewhere are never moved.
+    const QString downloadsRoot = QDir(MediaTools::downloadDir()).absolutePath();
+    const QString playlistFolder = folder.isEmpty() ? QString() : MediaTools::playlistDir(folder);
+
     for (auto &pf : m_pendingFiles) {
-        Track t = Track::create(pf.title, pf.artist, folder, QUrl::fromLocalFile(pf.filePath));
+        QString path = pf.filePath;
+        if (!playlistFolder.isEmpty()
+                && QFileInfo(path).absolutePath() == downloadsRoot) {
+            QString dest = playlistFolder + "/" + QFileInfo(path).fileName();
+            if (QFile::rename(path, dest)) path = dest;
+        }
+
+        Track t = Track::create(pf.title, pf.artist, folder, QUrl::fromLocalFile(path));
         t.cover = pf.palette;
         m_model->addTrack(t);
         emit trackAdded(t);

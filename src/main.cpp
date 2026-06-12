@@ -2,6 +2,7 @@
 #include <QSettings>
 #include "mainwindow.h"
 #include "theme.h"
+#include "lang.h"
 #include <QIcon>
 
 static const int RESTART_CODE = 1000;
@@ -20,6 +21,7 @@ int main(int argc, char *argv[])
 
         QSettings settings;
         Theme::setActiveTheme(Theme::themeById(settings.value("theme", "lumen").toString()));
+        Lang::setActiveLang(settings.value("language", "pt").toString());
 
         app.setStyleSheet(Theme::globalStyleSheet());
 

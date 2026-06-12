@@ -1,4 +1,5 @@
 #include "folderdetailpage.h"
+#include "lang.h"
 #include <QLabel>
 #include <QPushButton>
 #include <QHBoxLayout>
@@ -13,8 +14,11 @@
 #include <QMenu>
 #include <QGridLayout>
 #include <QListWidget>
+#include <QSettings>
+#include <algorithm>
 #include "hoverplayfilter.h"
 #include "reorderablelist.h"
+#include "textutils.h"
 
 FolderDetailPage::FolderDetailPage(TrackModel *model, QWidget *parent)
     : QWidget(parent), m_model(model)
@@ -37,8 +41,57 @@ FolderDetailPage::FolderDetailPage(TrackModel *model, QWidget *parent)
     outerLayout->addWidget(scroll);
 }
 
+// Sort modes selectable per playlist ("custom" keeps the user's drag order).
+struct SortMode { const char *id; const char *label; };
+static const SortMode kSortModes[] = {
+    {"custom",   "Personalizada"},
+    {"title",    "Título"},
+    {"artist",   "Artista"},
+    {"recent",   "Adicionadas recentemente"},
+    {"oldest",   "Mais antigas"},
+    {"duration", "Duração"},
+};
+
+static void applySortMode(QList<Track> &tracks, const QString &mode) {
+    auto title  = [](const Track &t) { return TextUtils::normalized(t.title); };
+    auto artist = [](const Track &t) { return TextUtils::normalized(t.artist); };
+
+    if (mode == "title") {
+        std::sort(tracks.begin(), tracks.end(),
+            [&](const Track &a, const Track &b) { return title(a) < title(b); });
+    } else if (mode == "artist") {
+        std::sort(tracks.begin(), tracks.end(),
+            [&](const Track &a, const Track &b) {
+                return artist(a) != artist(b) ? artist(a) < artist(b)
+                                              : title(a) < title(b);
+            });
+    } else if (mode == "recent") {
+        std::sort(tracks.begin(), tracks.end(),
+            [](const Track &a, const Track &b) {
+                return a.addedAt != b.addedAt ? a.addedAt > b.addedAt : a.id > b.id;
+            });
+    } else if (mode == "oldest") {
+        std::sort(tracks.begin(), tracks.end(),
+            [](const Track &a, const Track &b) {
+                return a.addedAt != b.addedAt ? a.addedAt < b.addedAt : a.id < b.id;
+            });
+    } else if (mode == "duration") {
+        std::sort(tracks.begin(), tracks.end(),
+            [&](const Track &a, const Track &b) {
+                return a.durationMs != b.durationMs ? a.durationMs < b.durationMs
+                                                    : title(a) < title(b);
+            });
+    }
+    // "custom" (default): keep the position-based order from the model.
+}
+
+QString FolderDetailPage::sortMode() const {
+    return QSettings().value(QString("playlistSort/%1").arg(m_folderId), "custom").toString();
+}
+
 void FolderDetailPage::setFolder(const QString &folderName) {
     m_folderName = folderName;
+    m_filterText.clear();   // each playlist starts with an empty search
     // Look up folder ID
     m_folderId = 0;
     if (!folderName.isEmpty()) {
@@ -73,6 +126,11 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
     m_contentLayout->addWidget(backBtn, 0, Qt::AlignLeft);
 
     auto tracks = isStandalone ? m_model->standaloneTracks() : m_model->tracksInFolder(m_folderName);
+    applySortMode(tracks, sortMode());
+    m_displayedTracks = tracks;
+    m_lastCurrentId = currentTrackId;
+    m_lastPlaying   = isPlaying;
+
     qint64 total = 0;
     for (auto &t : tracks) total += t.durationMs;
 
@@ -115,7 +173,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
 
             // Click the cover image to view it enlarged (like Spotify).
             cover->setCursor(Qt::PointingHandCursor);
-            cover->setToolTip("Ver imagem");
+            cover->setToolTip(Lang::tr("Ver imagem"));
             auto *zoom = new QPushButton(cover);
             zoom->setGeometry(0, 0, 140, 140);
             zoom->setStyleSheet("background: transparent; border: none;");
@@ -142,13 +200,13 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
 
     auto *infoLayout = new QVBoxLayout();
     infoLayout->addStretch();
-    auto *typeLabel = new QLabel(isStandalone ? "MÚSICAS AVULSAS" : "PLAYLIST");
+    auto *typeLabel = new QLabel(isStandalone ? Lang::tr("MÚSICAS AVULSAS") : Lang::tr("PLAYLIST"));
     typeLabel->setFont(Theme::bodyFont(10));
     typeLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;").arg(Theme::textMuted().name()));
     infoLayout->addWidget(typeLabel);
 
     auto *nameRow = new QHBoxLayout();
-    auto *nameLabel = new QLabel(isStandalone ? "Músicas avulsas" : m_folderName);
+    auto *nameLabel = new QLabel(isStandalone ? Lang::tr("Músicas avulsas") : m_folderName);
     nameLabel->setFont(Theme::titleFont(28));
     nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
     nameRow->addWidget(nameLabel);
@@ -159,7 +217,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         editBtn->setFixedSize(32, 32);
         editBtn->setCursor(Qt::PointingHandCursor);
         editBtn->setFont(Theme::iconFont(12));
-        editBtn->setToolTip("Editar playlist");
+        editBtn->setToolTip(Lang::tr("Editar playlist"));
         editBtn->setStyleSheet(QString(
             "QPushButton { background: rgba(255,255,255,0.05); color: %1; border: none; border-radius: 16px; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { background: rgba(255,255,255,0.12); color: %2; }"
@@ -172,7 +230,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         deletePlaylistBtn->setFixedSize(32, 32);
         deletePlaylistBtn->setCursor(Qt::PointingHandCursor);
         deletePlaylistBtn->setFont(Theme::iconFont(12));
-        deletePlaylistBtn->setToolTip("Excluir playlist");
+        deletePlaylistBtn->setToolTip(Lang::tr("Excluir playlist"));
         deletePlaylistBtn->setStyleSheet(QString(
             "QPushButton { background: rgba(255,255,255,0.05); color: %1; border: none; border-radius: 16px; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { background: rgba(255,255,255,0.12); color: %2; }"
@@ -181,9 +239,9 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         QString fname = m_folderName;
         connect(deletePlaylistBtn, &QPushButton::clicked, [this, fid, fname]() {
             auto *dlg = new QMessageBox(this);
-            dlg->setWindowTitle("Excluir Playlist");
-            dlg->setText(QString("Excluir a playlist \"%1\"?").arg(fname));
-            dlg->setInformativeText("As músicas não serão apagadas — ficarão como músicas avulsas.");
+            dlg->setWindowTitle(Lang::tr("Excluir Playlist"));
+            dlg->setText(QString(Lang::tr("Excluir a playlist \"%1\"?")).arg(fname));
+            dlg->setInformativeText(Lang::tr("As músicas não serão apagadas — ficarão como músicas avulsas."));
             dlg->setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
             dlg->setDefaultButton(QMessageBox::Cancel);
             dlg->setStyleSheet(QString(
@@ -200,7 +258,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
     nameRow->addStretch();
     infoLayout->addLayout(nameRow);
 
-    auto *statsLabel = new QLabel(QString("%1 faixa%2%3")
+    auto *statsLabel = new QLabel(QString(Lang::tr("%1 faixa%2%3"))
         .arg(tracks.size())
         .arg(tracks.size() != 1 ? "s" : "")
         .arg(total > 0 ? QString(" • %1").arg(Theme::formatTime(total)) : ""));
@@ -217,8 +275,11 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
     m_contentLayout->addWidget(headerWidget);
     m_contentLayout->addSpacing(12);
 
-    // Play button
+    // Controls row: play + in-playlist search + sort selector
     if (!tracks.isEmpty()) {
+        auto *controlsRow = new QHBoxLayout();
+        controlsRow->setSpacing(10);
+
         auto *playBtn = new QPushButton("\uE102");
         playBtn->setFixedSize(48, 48);
         playBtn->setCursor(Qt::PointingHandCursor);
@@ -229,12 +290,50 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
         Track first = tracks[0];
         connect(playBtn, &QPushButton::clicked, [this, first]() { emit playRequested(first); });
-        m_contentLayout->addWidget(playBtn, 0, Qt::AlignLeft);
+        controlsRow->addWidget(playBtn);
+        controlsRow->addStretch();
+
+        // Filters the rows live without rebuilding the page (keeps focus).
+        auto *searchEdit = new QLineEdit();
+        searchEdit->setPlaceholderText(Lang::tr("Buscar na playlist"));
+        searchEdit->setText(m_filterText);
+        searchEdit->setFont(Theme::bodyFont(11));
+        searchEdit->setClearButtonEnabled(true);
+        searchEdit->setFixedSize(220, 34);
+        searchEdit->setStyleSheet(QString(
+            "QLineEdit { background: %1; color: %2; border: 1px solid %3; border-radius: 17px; padding: 0 14px; }"
+            "QLineEdit:focus { border-color: %4; }"
+        ).arg(Theme::surface().name(), Theme::text().name(),
+              Theme::border().name(), Theme::accent().name()));
+        connect(searchEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
+            m_filterText = text;
+            applyFilter();
+        });
+        controlsRow->addWidget(searchEdit);
+
+        QString sortLabel;
+        for (const auto &m : kSortModes)
+            if (sortMode() == m.id) { sortLabel = Lang::tr(m.label); break; }
+        auto *sortBtn = new QPushButton(QString("  %1").arg(sortLabel));
+        sortBtn->setFixedHeight(34);
+        sortBtn->setCursor(Qt::PointingHandCursor);
+        sortBtn->setFont(Theme::bodyFont(11));
+        sortBtn->setToolTip(Lang::tr("Ordenar"));
+        sortBtn->setStyleSheet(QString(
+            "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 17px; padding: 0 14px; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; }"
+            "QPushButton:hover { color: %3; border-color: %3; }"
+        ).arg(Theme::textSoft().name(), Theme::border().name(), Theme::accent().name()));
+        connect(sortBtn, &QPushButton::clicked, this, &FolderDetailPage::showSortMenu);
+        controlsRow->addWidget(sortBtn);
+
+        auto *controlsWidget = new QWidget();
+        controlsWidget->setLayout(controlsRow);
+        controlsWidget->setStyleSheet("background: transparent;");
+        m_contentLayout->addWidget(controlsWidget);
         m_contentLayout->addSpacing(8);
     }
 
     // Track list — a QListWidget so rows can be reordered by drag-and-drop.
-    m_hoverItem = nullptr;
     auto *list = new ReorderableList();
     m_trackList = list;
     list->setFrameShape(QFrame::NoFrame);
@@ -244,11 +343,11 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
     list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     list->setSpacing(4);
-    list->setMouseTracking(true);
-    list->viewport()->setMouseTracking(true);
-    list->viewport()->installEventFilter(this);   // catch Leave to reset hover
-    // Drag-to-reorder only makes sense inside a real playlist.
-    if (!isStandalone) {
+    // Drag-to-reorder only makes sense inside a real playlist showing the
+    // custom order (and with no search filter active — applyFilter() handles
+    // that part dynamically).
+    m_canReorder = !isStandalone && sortMode() == "custom";
+    if (m_canReorder) {
         list->setDragDropMode(QAbstractItemView::InternalMove);
         list->setSelectionMode(QAbstractItemView::SingleSelection);
         list->setDefaultDropAction(Qt::MoveAction);
@@ -263,7 +362,9 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         auto *row = new QWidget();
         row->setObjectName("trackRow");
         row->setFixedHeight(52);
-        row->setAttribute(Qt::WA_TransparentForMouseEvents);  // list handles click/drag
+        // The row itself ignores mouse events (they propagate to the list,
+        // which handles click-to-play and drag-to-reorder), but its buttons
+        // must stay clickable — so no WA_TransparentForMouseEvents here.
         row->setStyleSheet(QString(
             "QWidget#trackRow { background: %1; border-radius: 8px; border-left: 3px solid %2; }"
         ).arg(active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"),
@@ -281,10 +382,8 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         idx->setStyleSheet(QString("color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;").arg(active ? Theme::accent().name() : Theme::textMuted().name()));
         idx->setAttribute(Qt::WA_TransparentForMouseEvents);
         layout->addWidget(idx);
-        // Stash hover info so itemEntered can swap the number for a play glyph.
-        row->setProperty("idxLabel", QVariant::fromValue<QObject *>(idx));
-        row->setProperty("idxNum", idxNum);
-        row->setProperty("rowActive", active);
+        // Hovering the row swaps the number for a play glyph.
+        if (!active) row->installEventFilter(new HoverPlayFilter(idx, idxNum, row));
 
         auto *swatch = new QWidget();
         swatch->setFixedSize(38, 38);
@@ -293,18 +392,26 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
             .arg(track.cover.c1.name(), track.cover.c2.name()));
         layout->addWidget(swatch);
 
+        auto *infoCol = new QVBoxLayout();
+        infoCol->setSpacing(1);
         auto *titleLabel = new QLabel(track.title);
         titleLabel->setFont(Theme::bodyFont(13));
         titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
         titleLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: 600;").arg(active ? Theme::accent().name() : Theme::text().name()));
-        layout->addWidget(titleLabel, 1);
+        auto *artistLabel = new QLabel(track.artist);
+        artistLabel->setFont(Theme::bodyFont(11));
+        artistLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+        artistLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+        infoCol->addWidget(titleLabel);
+        infoCol->addWidget(artistLabel);
+        layout->addLayout(infoCol, 1);
 
         // Add to queue button
         auto *enqueueBtn = new QPushButton(QStringLiteral("\uE710"));
         enqueueBtn->setFixedSize(28, 28);
         enqueueBtn->setCursor(Qt::PointingHandCursor);
         enqueueBtn->setFont(Theme::iconFont(11));
-        enqueueBtn->setToolTip("Adicionar à fila");
+        enqueueBtn->setToolTip(Lang::tr("Adicionar à fila"));
         enqueueBtn->setStyleSheet(QString(
             "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %2; }"
@@ -318,7 +425,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         moveBtn->setFixedSize(28, 28);
         moveBtn->setCursor(Qt::PointingHandCursor);
         moveBtn->setFont(Theme::iconFont(11));
-        moveBtn->setToolTip(isStandalone ? "Adicionar à playlist" : "Mover para outra playlist");
+        moveBtn->setToolTip(isStandalone ? Lang::tr("Adicionar à playlist") : Lang::tr("Mover para outra playlist"));
         moveBtn->setStyleSheet(QString(
             "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %2; }"
@@ -347,7 +454,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         auto *editBtn = new QPushButton(QStringLiteral("\uE70F"));
         editBtn->setFixedSize(24, 24);
         editBtn->setCursor(Qt::PointingHandCursor);
-        editBtn->setToolTip("Editar m\u00FAsica");
+        editBtn->setToolTip(Lang::tr("Editar m\u00FAsica"));
         editBtn->setStyleSheet(QString("QPushButton { background: transparent; color: %1; border: none; font-size: 11px; font-family: \"Segoe MDL2 Assets\"; } QPushButton:hover { color: %2; }").arg(
             Theme::textMuted().name(), Theme::accent().name()));
         Track et = track;
@@ -366,6 +473,9 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         auto *listItem = new QListWidgetItem(list);
         listItem->setSizeHint(QSize(0, 52));
         listItem->setData(Qt::UserRole, track.id);
+        // Pre-normalized haystack for the in-playlist search.
+        listItem->setData(Qt::UserRole + 1,
+                          TextUtils::normalized(track.title + " " + track.artist));
         list->setItemWidget(listItem, row);
     }
 
@@ -375,15 +485,6 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
     connect(list, &QListWidget::itemClicked, this, [this](QListWidgetItem *it) {
         int id = it->data(Qt::UserRole).toInt();
         if (Track *t = m_model->findTrack(id)) emit playRequested(*t);
-    });
-    connect(list, &QListWidget::itemEntered, this, [this](QListWidgetItem *it) {
-        if (m_hoverItem == it) return;
-        restoreHover();
-        m_hoverItem = it;
-        QWidget *w = m_trackList->itemWidget(it);
-        if (!w || w->property("rowActive").toBool()) return;
-        if (auto *lbl = qobject_cast<QLabel *>(w->property("idxLabel").value<QObject *>()))
-            lbl->setText(QStringLiteral(""));   // play glyph
     });
     connect(list, &ReorderableList::moveRequested, this, [this](int from, int to) {
         QList<int> ids;
@@ -396,27 +497,54 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
 
     m_contentLayout->addWidget(list);
     m_contentLayout->addStretch();
+
+    // Re-apply a search that was active before this rebuild.
+    applyFilter();
 }
 
-void FolderDetailPage::restoreHover() {
-    if (!m_hoverItem || !m_trackList) { m_hoverItem = nullptr; return; }
-    if (QWidget *w = m_trackList->itemWidget(m_hoverItem)) {
-        if (!w->property("rowActive").toBool())
-            if (auto *lbl = qobject_cast<QLabel *>(w->property("idxLabel").value<QObject *>()))
-                lbl->setText(w->property("idxNum").toString());
+void FolderDetailPage::applyFilter() {
+    if (!m_trackList) return;
+    const QString needle = TextUtils::normalized(m_filterText);
+    int visible = 0;
+    for (int i = 0; i < m_trackList->count(); ++i) {
+        auto *it = m_trackList->item(i);
+        const bool show = needle.isEmpty()
+            || it->data(Qt::UserRole + 1).toString().contains(needle);
+        it->setHidden(!show);
+        if (show) ++visible;
     }
-    m_hoverItem = nullptr;
+    m_trackList->setFixedHeight(visible * 60 + 12);
+    // Hidden rows would corrupt drag indices, so reordering pauses while a
+    // search is active.
+    m_trackList->setDragDropMode(m_canReorder && needle.isEmpty()
+        ? QAbstractItemView::InternalMove : QAbstractItemView::NoDragDrop);
 }
 
-bool FolderDetailPage::eventFilter(QObject *obj, QEvent *event) {
-    if (m_trackList && obj == m_trackList->viewport() && event->type() == QEvent::Leave)
-        restoreHover();
-    return QWidget::eventFilter(obj, event);
+void FolderDetailPage::showSortMenu() {
+    auto *menu = new QMenu(this);
+    menu->setStyleSheet(QString(
+        "QMenu { background: %1; border: 1px solid %2; border-radius: 8px; padding: 4px; color: %3; }"
+        "QMenu::item { padding: 8px 16px; border-radius: 4px; }"
+        "QMenu::item:selected { background: %4; }"
+    ).arg(Theme::card().name(), Theme::border().name(), Theme::text().name(), Theme::cardHover().name()));
+
+    const QString current = sortMode();
+    for (const auto &m : kSortModes) {
+        QString label = Lang::tr(m.label);
+        if (current == m.id) label = "✓ " + label;
+        QString id = m.id;
+        menu->addAction(label, [this, id]() {
+            QSettings().setValue(QString("playlistSort/%1").arg(m_folderId), id);
+            refresh(m_lastCurrentId, m_lastPlaying);
+        });
+    }
+    menu->exec(QCursor::pos());
+    menu->deleteLater();
 }
 
 void FolderDetailPage::showEditDialog() {
     auto *dlg = new QDialog(this);
-    dlg->setWindowTitle("Editar Playlist");
+    dlg->setWindowTitle(Lang::tr("Editar Playlist"));
     dlg->setFixedSize(380, 300);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setStyleSheet(QString(
@@ -431,7 +559,7 @@ void FolderDetailPage::showEditDialog() {
     layout->setContentsMargins(20, 20, 20, 20);
     layout->setSpacing(12);
 
-    auto *nameLabel = new QLabel("Nome da playlist");
+    auto *nameLabel = new QLabel(Lang::tr("Nome da playlist"));
     nameLabel->setFont(Theme::bodyFont(12));
     layout->addWidget(nameLabel);
 
@@ -447,7 +575,7 @@ void FolderDetailPage::showEditDialog() {
         if (f.name == m_folderName) { currentCover = f.cover; currentImage = f.coverImage; break; }
     }
 
-    auto *colorLabel = new QLabel("Cores da capa:");
+    auto *colorLabel = new QLabel(Lang::tr("Cores da capa:"));
     colorLabel->setFont(Theme::bodyFont(12));
     layout->addWidget(colorLabel);
 
@@ -468,13 +596,13 @@ void FolderDetailPage::showEditDialog() {
             .arg(c1->name(), c2->name()));
     };
 
-    auto *btn1 = new QPushButton("Cor 1");
+    auto *btn1 = new QPushButton(Lang::tr("Cor 1"));
     btn1->setFixedSize(60, 32);
     btn1->setCursor(Qt::PointingHandCursor);
     btn1->setFont(Theme::bodyFont(11));
     btn1->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c1->name()));
     connect(btn1, &QPushButton::clicked, [btn1, c1, updatePrev, dlg]() {
-        QColor chosen = QColorDialog::getColor(*c1, dlg, "Cor 1");
+        QColor chosen = QColorDialog::getColor(*c1, dlg, Lang::tr("Cor 1"));
         if (chosen.isValid()) {
             *c1 = chosen;
             btn1->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c1->name()));
@@ -483,13 +611,13 @@ void FolderDetailPage::showEditDialog() {
     });
     colorRow->addWidget(btn1);
 
-    auto *btn2 = new QPushButton("Cor 2");
+    auto *btn2 = new QPushButton(Lang::tr("Cor 2"));
     btn2->setFixedSize(60, 32);
     btn2->setCursor(Qt::PointingHandCursor);
     btn2->setFont(Theme::bodyFont(11));
     btn2->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c2->name()));
     connect(btn2, &QPushButton::clicked, [btn2, c2, updatePrev, dlg]() {
-        QColor chosen = QColorDialog::getColor(*c2, dlg, "Cor 2");
+        QColor chosen = QColorDialog::getColor(*c2, dlg, Lang::tr("Cor 2"));
         if (chosen.isValid()) {
             *c2 = chosen;
             btn2->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c2->name()));
@@ -501,7 +629,7 @@ void FolderDetailPage::showEditDialog() {
     layout->addLayout(colorRow);
 
     // Optional cover image (overrides the gradient when set)
-    auto *imageLabel = new QLabel("Imagem da capa:");
+    auto *imageLabel = new QLabel(Lang::tr("Imagem da capa:"));
     imageLabel->setFont(Theme::bodyFont(12));
     layout->addWidget(imageLabel);
 
@@ -518,7 +646,7 @@ void FolderDetailPage::showEditDialog() {
     }
     imageRow->addWidget(imgPreview);
 
-    auto *pickImageBtn = new QPushButton("Escolher imagem");
+    auto *pickImageBtn = new QPushButton(Lang::tr("Escolher imagem"));
     pickImageBtn->setFont(Theme::bodyFont(11));
     pickImageBtn->setFixedHeight(32);
     pickImageBtn->setCursor(Qt::PointingHandCursor);
@@ -527,8 +655,8 @@ void FolderDetailPage::showEditDialog() {
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
     connect(pickImageBtn, &QPushButton::clicked, [dlg, imagePath, imgPreview]() {
-        QString file = QFileDialog::getOpenFileName(dlg, "Escolher imagem da capa", QString(),
-            "Imagens (*.png *.jpg *.jpeg *.bmp *.webp)");
+        QString file = QFileDialog::getOpenFileName(dlg, Lang::tr("Escolher imagem da capa"), QString(),
+            Lang::tr("Imagens (*.png *.jpg *.jpeg *.bmp *.webp)"));
         if (file.isEmpty()) return;
         *imagePath = file;
         QPixmap pm = Theme::roundedCover(file, 50, 32, 6);
@@ -536,11 +664,11 @@ void FolderDetailPage::showEditDialog() {
     });
     imageRow->addWidget(pickImageBtn);
 
-    auto *clearImageBtn = new QPushButton("Remover");
+    auto *clearImageBtn = new QPushButton(Lang::tr("Remover"));
     clearImageBtn->setFont(Theme::bodyFont(11));
     clearImageBtn->setFixedHeight(32);
     clearImageBtn->setCursor(Qt::PointingHandCursor);
-    clearImageBtn->setToolTip("Voltar a usar o gradiente de cores");
+    clearImageBtn->setToolTip(Lang::tr("Voltar a usar o gradiente de cores"));
     clearImageBtn->setStyleSheet(QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 8px; padding: 0 10px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
@@ -556,7 +684,7 @@ void FolderDetailPage::showEditDialog() {
 
     auto *btnRow = new QHBoxLayout();
     btnRow->addStretch();
-    auto *cancelBtn = new QPushButton("Cancelar");
+    auto *cancelBtn = new QPushButton(Lang::tr("Cancelar"));
     cancelBtn->setFont(Theme::bodyFont(12));
     cancelBtn->setFixedHeight(36);
     cancelBtn->setCursor(Qt::PointingHandCursor);
@@ -567,7 +695,7 @@ void FolderDetailPage::showEditDialog() {
     connect(cancelBtn, &QPushButton::clicked, [dlg, c1, c2, imagePath]() { delete c1; delete c2; delete imagePath; dlg->reject(); });
     btnRow->addWidget(cancelBtn);
 
-    auto *saveBtn = new QPushButton("Salvar");
+    auto *saveBtn = new QPushButton(Lang::tr("Salvar"));
     saveBtn->setFont(Theme::bodyFont(12));
     saveBtn->setFixedHeight(36);
     saveBtn->setCursor(Qt::PointingHandCursor);
@@ -622,13 +750,13 @@ void FolderDetailPage::showMoveDialog(int trackId) {
 
     if (m_folderId != 0) {
         if (addedAny) menu->addSeparator();
-        menu->addAction("Remover da playlist", [this, trackId]() {
+        menu->addAction(Lang::tr("Remover da playlist"), [this, trackId]() {
             m_model->moveTrackToPlaylist(trackId, 0, "");
         });
     }
 
     if (menu->actions().isEmpty()) {
-        menu->addAction("Nenhuma playlist disponível")->setEnabled(false);
+        menu->addAction(Lang::tr("Nenhuma playlist disponível"))->setEnabled(false);
     }
 
     menu->exec(QCursor::pos());
@@ -672,7 +800,7 @@ void FolderDetailPage::showCoverLightbox(const QString &imagePath) {
     imgLabel->setPixmap(full.scaled(side, side, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     layout->addWidget(imgLabel, 0, Qt::AlignCenter);
 
-    auto *closeBtn = new QPushButton("Close");
+    auto *closeBtn = new QPushButton(Lang::tr("Fechar"));
     closeBtn->setFont(Theme::bodyFont(13));
     closeBtn->setFixedHeight(38);
     closeBtn->setCursor(Qt::PointingHandCursor);
