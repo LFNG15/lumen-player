@@ -49,6 +49,8 @@ private:
     void repositionToast();
     void showEditTrackDialog(const Track &track);
     void confirmDeleteTrack(const Track &track);
+    void showSidebarSortMenu();
+    void toggleSidebarSearch();
 
     TrackModel *m_model;
     PlayerBar *m_playerBar;
@@ -75,6 +77,10 @@ private:
     QLabel *m_logoText = nullptr;
     QLabel *m_badge = nullptr;
     QLabel *m_foldersHeader = nullptr;
+    QWidget *m_foldersHeaderRow = nullptr;
+    QLineEdit *m_sidebarSearchEdit = nullptr;
+    QPushButton *m_sidebarSearchBtn = nullptr;
+    QString m_sidebarFilter;
     QPushButton *m_collapseBtn = nullptr;
     QPushButton *m_langBtn = nullptr;
     QHBoxLayout *m_logoLayout = nullptr;

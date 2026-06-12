@@ -13,7 +13,10 @@
 #include <QIcon>
 #include <QSplitter>
 #include <QCloseEvent>
+#include <QMenu>
+#include <algorithm>
 #include "coverwidget.h"
+#include "textutils.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -110,6 +113,9 @@ MainWindow::MainWindow(QWidget *parent)
             settings.setValue("sidebarWidth", m_splitter->sizes().value(0));
         if (m_queuePage->isVisible())
             settings.setValue("queueWidth", m_splitter->sizes().value(2));
+        // The grid view sizes its cells from the sidebar width.
+        if (!m_sidebarCollapsed && settings.value("sidebarView", "list").toString() == "grid")
+            refreshSidebarFolders();
     });
 
     // ── Connections ─────────────────────────────────────────
@@ -398,12 +404,61 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 
     layout->addWidget(navWidget);
 
-    // Sidebar folders
-    m_foldersHeader = new QLabel("  " + Lang::tr("SUAS PLAYLISTS"));
+    // Sidebar folders header: label + search toggle + sort/view menu,
+    // like Spotify's "Your Library" header.
+    m_foldersHeaderRow = new QWidget();
+    m_foldersHeaderRow->setStyleSheet("background: transparent;");
+    auto *headerLayout = new QHBoxLayout(m_foldersHeaderRow);
+    headerLayout->setContentsMargins(20, 16, 14, 4);
+    headerLayout->setSpacing(2);
+
+    m_foldersHeader = new QLabel(Lang::tr("SUAS PLAYLISTS"));
     m_foldersHeader->setFont(Theme::bodyFont(10));
-    m_foldersHeader->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px; padding: 16px 20px 4px;")
+    m_foldersHeader->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;")
         .arg(Theme::textMuted().name()));
-    layout->addWidget(m_foldersHeader);
+    headerLayout->addWidget(m_foldersHeader);
+    headerLayout->addStretch();
+
+    auto makeHeaderBtn = [](const QString &glyph, const QString &tip) -> QPushButton* {
+        auto *btn = new QPushButton(glyph);
+        btn->setFixedSize(24, 24);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFont(Theme::iconFont(11));
+        btn->setToolTip(tip);
+        btn->setStyleSheet(QString(
+            "QPushButton { background: transparent; color: %1; border: none; border-radius: 12px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+        ).arg(Theme::textMuted().name(), Theme::text().name()));
+        return btn;
+    };
+
+    m_sidebarSearchBtn = makeHeaderBtn("", Lang::tr("Buscar playlists"));
+    connect(m_sidebarSearchBtn, &QPushButton::clicked, this, &MainWindow::toggleSidebarSearch);
+    headerLayout->addWidget(m_sidebarSearchBtn);
+
+    auto *sortBtn = makeHeaderBtn("", Lang::tr("Ordenar e exibir"));
+    connect(sortBtn, &QPushButton::clicked, this, &MainWindow::showSidebarSortMenu);
+    headerLayout->addWidget(sortBtn);
+
+    layout->addWidget(m_foldersHeaderRow);
+
+    // Inline playlist search, hidden until the magnifier is clicked.
+    m_sidebarSearchEdit = new QLineEdit();
+    m_sidebarSearchEdit->setPlaceholderText(Lang::tr("Buscar playlists"));
+    m_sidebarSearchEdit->setFont(Theme::bodyFont(11));
+    m_sidebarSearchEdit->setClearButtonEnabled(true);
+    m_sidebarSearchEdit->setFixedHeight(30);
+    m_sidebarSearchEdit->setStyleSheet(QString(
+        "QLineEdit { background: %1; color: %2; border: 1px solid %3; border-radius: 15px; padding: 0 12px; margin: 0 10px 4px; }"
+        "QLineEdit:focus { border-color: %4; }"
+    ).arg(Theme::surface().name(), Theme::text().name(),
+          Theme::border().name(), Theme::accent().name()));
+    m_sidebarSearchEdit->hide();
+    connect(m_sidebarSearchEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
+        m_sidebarFilter = text;
+        refreshSidebarFolders();
+    });
+    layout->addWidget(m_sidebarSearchEdit);
 
     auto *scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
@@ -483,7 +538,8 @@ void MainWindow::applySidebarCollapsed(bool collapsed, bool save) {
     // Text-bearing elements disappear; icons and covers stay.
     m_logoText->setVisible(!collapsed);
     m_badge->setVisible(!collapsed);
-    m_foldersHeader->setVisible(!collapsed);
+    m_foldersHeaderRow->setVisible(!collapsed);
+    m_sidebarSearchEdit->setVisible(!collapsed && !m_sidebarFilter.isEmpty());
     m_trackCountLabel->setVisible(!collapsed);
     m_langBtn->setVisible(!collapsed);
 
@@ -518,6 +574,47 @@ void MainWindow::refreshSidebarFolders() {
     }
 
     auto folders = m_model->folders();
+
+    // Live playlist search (the magnifier in the header).
+    const QString needle = TextUtils::normalized(m_sidebarFilter);
+    if (!needle.isEmpty()) {
+        folders.erase(std::remove_if(folders.begin(), folders.end(),
+            [&needle](const Folder &f) { return !TextUtils::normalized(f.name).contains(needle); }),
+            folders.end());
+    }
+
+    // Sort mode, persisted like the per-playlist sort.
+    const QString sortMode = QSettings().value("sidebarSort", "recents").toString();
+    if (sortMode == "alpha") {
+        std::sort(folders.begin(), folders.end(), [](const Folder &a, const Folder &b) {
+            return TextUtils::normalized(a.name) < TextUtils::normalized(b.name);
+        });
+    } else if (sortMode == "added") {
+        std::sort(folders.begin(), folders.end(), [](const Folder &a, const Folder &b) {
+            return a.id > b.id;
+        });
+    } else {  // "recents": last played first; never-played keep creation order.
+        QHash<int, qint64> lastPlayed;
+        for (const auto &t : m_model->tracks())
+            if (t.folderId > 0 && t.lastPlayedAt > lastPlayed.value(t.folderId))
+                lastPlayed[t.folderId] = t.lastPlayedAt;
+        std::stable_sort(folders.begin(), folders.end(), [&lastPlayed](const Folder &a, const Folder &b) {
+            return lastPlayed.value(a.id) > lastPlayed.value(b.id);
+        });
+    }
+
+    const QString viewMode = QSettings().value("sidebarView", "list").toString();
+    auto isActiveFolder = [this](const Folder &f) {
+        return m_currentPage == "folder"
+            && m_folderDetailPage->property("folderName").toString() == f.name;
+    };
+    auto rowStyle = [](bool active) {
+        return QString(
+            "QPushButton { background: %1; border: none; border-radius: 8px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.05); }"
+        ).arg(active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"));
+    };
+
     if (folders.isEmpty()) {
         if (!m_sidebarCollapsed) {
             auto *emptyLabel = new QLabel(Lang::tr("Nenhuma playlist"));
@@ -525,18 +622,58 @@ void MainWindow::refreshSidebarFolders() {
             emptyLabel->setStyleSheet(QString("color: %1; background: transparent; padding: 4px 14px;").arg(Theme::textMuted().name()));
             m_sidebarFoldersLayout->addWidget(emptyLabel);
         }
+    } else if (!m_sidebarCollapsed && viewMode == "grid") {
+        // Grid of covers with the name underneath, like Spotify's grid view.
+        auto *gridWidget = new QWidget();
+        gridWidget->setStyleSheet("background: transparent;");
+        auto *grid = new QGridLayout(gridWidget);
+        grid->setContentsMargins(0, 0, 0, 0);
+        grid->setSpacing(6);
+
+        const int availW = qMax(150, m_sidebar->width() - 34);
+        const int cols = qMax(2, availW / 104);
+        const int cellW = (availW - (cols - 1) * 6) / cols;
+
+        for (int i = 0; i < folders.size(); ++i) {
+            const Folder &f = folders[i];
+            auto tracks = m_model->tracksInFolder(f.name);
+
+            auto *btn = new QPushButton();
+            btn->setCursor(Qt::PointingHandCursor);
+            btn->setFixedSize(cellW, cellW + 16);
+            btn->setToolTip(f.name);
+
+            auto *cellLayout = new QVBoxLayout(btn);
+            cellLayout->setContentsMargins(6, 6, 6, 4);
+            cellLayout->setSpacing(4);
+            cellLayout->addWidget(CoverWidget::playlistCover(f, tracks, cellW - 12, 6), 0, Qt::AlignHCenter);
+
+            auto *nameLabel = new QLabel(QFontMetrics(Theme::bodyFont(10))
+                .elidedText(f.name, Qt::ElideRight, cellW - 12));
+            nameLabel->setFont(Theme::bodyFont(10));
+            nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+            cellLayout->addWidget(nameLabel, 0, Qt::AlignHCenter);
+
+            btn->setStyleSheet(rowStyle(isActiveFolder(f)));
+            QString folderName = f.name;
+            connect(btn, &QPushButton::clicked, [this, folderName]() { navigateTo("folder", folderName); });
+            grid->addWidget(btn, i / cols, i % cols);
+        }
+        grid->setColumnStretch(cols, 1);
+        m_sidebarFoldersLayout->addWidget(gridWidget);
     } else {
+        const bool compact = !m_sidebarCollapsed && viewMode == "compact";
         for (auto &f : folders) {
             auto tracks = m_model->tracksInFolder(f.name);
             auto *btn = new QPushButton();
             btn->setCursor(Qt::PointingHandCursor);
-            btn->setFixedHeight(m_sidebarCollapsed ? 48 : 42);
+            btn->setFixedHeight(m_sidebarCollapsed ? 48 : (compact ? 30 : 42));
             btn->setFont(Theme::bodyFont(12));
 
             auto *btnLayout = new QHBoxLayout(btn);
             // Small cover, like Spotify's sidebar (image > mosaic > gradient).
             // Collapsed mode shows only the cover, centered, with the name as
-            // a tooltip.
+            // a tooltip. Compact mode drops the cover entirely.
             if (m_sidebarCollapsed) {
                 btnLayout->setContentsMargins(0, 0, 0, 0);
                 btnLayout->setAlignment(Qt::AlignCenter);
@@ -545,7 +682,8 @@ void MainWindow::refreshSidebarFolders() {
             } else {
                 btnLayout->setContentsMargins(8, 0, 14, 0);
                 btnLayout->setSpacing(8);
-                btnLayout->addWidget(CoverWidget::playlistCover(f, tracks, 28, 5), 0, Qt::AlignVCenter);
+                if (!compact)
+                    btnLayout->addWidget(CoverWidget::playlistCover(f, tracks, 28, 5), 0, Qt::AlignVCenter);
                 auto *nameLabel = new QLabel(f.name);
                 nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
                 nameLabel->setFont(Theme::bodyFont(12));
@@ -557,11 +695,7 @@ void MainWindow::refreshSidebarFolders() {
                 btnLayout->addWidget(countLabel);
             }
 
-            bool isActive = (m_currentPage == "folder" && m_folderDetailPage->property("folderName").toString() == f.name);
-            btn->setStyleSheet(QString(
-                "QPushButton { background: %1; border: none; border-radius: 8px; }"
-                "QPushButton:hover { background: rgba(255,255,255,0.05); }"
-            ).arg(isActive ? Theme::accentRgba(0.12) : QStringLiteral("transparent")));
+            btn->setStyleSheet(rowStyle(isActiveFolder(f)));
 
             QString folderName = f.name;
             connect(btn, &QPushButton::clicked, [this, folderName]() { navigateTo("folder", folderName); });
@@ -571,6 +705,66 @@ void MainWindow::refreshSidebarFolders() {
     }
 
     m_sidebarFoldersLayout->addStretch();
+}
+
+void MainWindow::toggleSidebarSearch() {
+    const bool show = !m_sidebarSearchEdit->isVisible();
+    m_sidebarSearchEdit->setVisible(show);
+    if (show) {
+        m_sidebarSearchEdit->setFocus();
+    } else if (!m_sidebarFilter.isEmpty()) {
+        m_sidebarSearchEdit->clear();  // textChanged refreshes the list
+    }
+}
+
+void MainWindow::showSidebarSortMenu() {
+    auto *menu = new QMenu(this);
+    menu->setStyleSheet(QString(
+        "QMenu { background: %1; border: 1px solid %2; border-radius: 8px; padding: 4px; color: %3; }"
+        "QMenu::item { padding: 8px 16px; border-radius: 4px; }"
+        "QMenu::item:selected { background: %4; }"
+        "QMenu::item:disabled { color: %5; }"
+        "QMenu::separator { height: 1px; background: %2; margin: 4px 0; }"
+    ).arg(Theme::card().name(), Theme::border().name(), Theme::text().name(),
+          Theme::cardHover().name(), Theme::textMuted().name()));
+
+    QSettings settings;
+    const QString currentSort = settings.value("sidebarSort", "recents").toString();
+    const QString currentView = settings.value("sidebarView", "list").toString();
+
+    menu->addAction(Lang::tr("Ordenar por"))->setEnabled(false);
+    const QPair<QString, QString> sortModes[] = {
+        {"recents", Lang::tr("Recentes")},
+        {"added",   Lang::tr("Adicionadas recentemente")},
+        {"alpha",   Lang::tr("Alfabética")},
+    };
+    for (const auto &m : sortModes) {
+        QString label = (currentSort == m.first ? "✓ " : "   ") + m.second;
+        QString id = m.first;
+        menu->addAction(label, [this, id]() {
+            QSettings().setValue("sidebarSort", id);
+            refreshSidebarFolders();
+        });
+    }
+
+    menu->addSeparator();
+    menu->addAction(Lang::tr("Exibir como"))->setEnabled(false);
+    const QPair<QString, QString> viewModes[] = {
+        {"compact", Lang::tr("Compacta")},
+        {"list",    Lang::tr("Lista")},
+        {"grid",    Lang::tr("Grade")},
+    };
+    for (const auto &m : viewModes) {
+        QString label = (currentView == m.first ? "✓ " : "   ") + m.second;
+        QString id = m.first;
+        menu->addAction(label, [this, id]() {
+            QSettings().setValue("sidebarView", id);
+            refreshSidebarFolders();
+        });
+    }
+
+    menu->exec(QCursor::pos());
+    menu->deleteLater();
 }
 
 void MainWindow::showEditTrackDialog(const Track &track) {
