@@ -1,3 +1,4 @@
+#include "design/stylesheet.h"
 #include "folderdetailpage.h"
 #include "lang.h"
 #include <QLabel>
@@ -29,10 +30,10 @@ FolderDetailPage::FolderDetailPage(TrackModel *model, QWidget *parent)
     auto *scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+    lumen::design::StyleSheet::apply(scroll, "QScrollArea { background: transparent; border: none; }");
 
     auto *content = new QWidget();
-    content->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(content, "background: transparent;");
     m_contentLayout = new QVBoxLayout(content);
     m_contentLayout->setContentsMargins(32, 28, 32, 28);
     m_contentLayout->setSpacing(8);
@@ -118,7 +119,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
     backBtn->setFixedSize(34, 34);
     backBtn->setCursor(Qt::PointingHandCursor);
     backBtn->setFont(Theme::iconFont(12));
-    backBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(backBtn, QString(
         "QPushButton { background: rgba(255,255,255,0.05); color: %1; border: none; border-radius: 17px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.1); }"
     ).arg(Theme::text().name()));
@@ -147,13 +148,13 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
             coverGrid->setContentsMargins(0, 0, 0, 0);
             for (int i = 0; i < 4; ++i) {
                 auto *cell = new QWidget();
-                cell->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 4px;")
+                lumen::design::StyleSheet::apply(cell, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 4px;")
                     .arg(tracks[i].cover.c1.name(), tracks[i].cover.c2.name()));
                 coverGrid->addWidget(cell, i / 2, i % 2);
             }
         } else {
             auto g = tracks.isEmpty() ? Theme::randomPalette() : tracks[0].cover;
-            cover->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 10px;")
+            lumen::design::StyleSheet::apply(cover, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 10px;")
                 .arg(g.c1.name(), g.c2.name()));
         }
     } else {
@@ -169,14 +170,14 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
             auto *imgLabel = new QLabel(cover);
             imgLabel->setGeometry(0, 0, 140, 140);
             imgLabel->setPixmap(coverPix);
-            imgLabel->setStyleSheet("background: transparent;");
+            lumen::design::StyleSheet::apply(imgLabel, "background: transparent;");
 
             // Click the cover image to view it enlarged (like Spotify).
             cover->setCursor(Qt::PointingHandCursor);
             cover->setToolTip(Lang::tr("Ver imagem"));
             auto *zoom = new QPushButton(cover);
             zoom->setGeometry(0, 0, 140, 140);
-            zoom->setStyleSheet("background: transparent; border: none;");
+            lumen::design::StyleSheet::apply(zoom, "background: transparent; border: none;");
             zoom->setCursor(Qt::PointingHandCursor);
             QString img = folderImage;
             connect(zoom, &QPushButton::clicked, [this, img]() { showCoverLightbox(img); });
@@ -186,13 +187,13 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
             coverGrid->setContentsMargins(0, 0, 0, 0);
             for (int i = 0; i < 4; ++i) {
                 auto *cell = new QWidget();
-                cell->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 4px;")
+                lumen::design::StyleSheet::apply(cell, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 4px;")
                     .arg(tracks[i].cover.c1.name(), tracks[i].cover.c2.name()));
                 coverGrid->addWidget(cell, i / 2, i % 2);
             }
         } else {
             auto g = (folderCover.c1.isValid() && folderCover.c1 != QColor()) ? folderCover : (tracks.isEmpty() ? Theme::randomPalette() : tracks[0].cover);
-            cover->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 10px;")
+            lumen::design::StyleSheet::apply(cover, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 10px;")
                 .arg(g.c1.name(), g.c2.name()));
         }
     }
@@ -202,13 +203,13 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
     infoLayout->addStretch();
     auto *typeLabel = new QLabel(isStandalone ? Lang::tr("MÚSICAS AVULSAS") : Lang::tr("PLAYLIST"));
     typeLabel->setFont(Theme::bodyFont(10));
-    typeLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(typeLabel, QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;").arg(Theme::textMuted().name()));
     infoLayout->addWidget(typeLabel);
 
     auto *nameRow = new QHBoxLayout();
     auto *nameLabel = new QLabel(isStandalone ? Lang::tr("Músicas avulsas") : m_folderName);
     nameLabel->setFont(Theme::titleFont(28));
-    nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
+    lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent;").arg(Theme::text().name()));
     nameRow->addWidget(nameLabel);
 
     // Edit button (only for real playlists)
@@ -218,7 +219,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         editBtn->setCursor(Qt::PointingHandCursor);
         editBtn->setFont(Theme::iconFont(12));
         editBtn->setToolTip(Lang::tr("Editar playlist"));
-        editBtn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(editBtn, QString(
             "QPushButton { background: rgba(255,255,255,0.05); color: %1; border: none; border-radius: 16px; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { background: rgba(255,255,255,0.12); color: %2; }"
         ).arg(Theme::textMuted().name(), Theme::accent().name()));
@@ -231,7 +232,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         deletePlaylistBtn->setCursor(Qt::PointingHandCursor);
         deletePlaylistBtn->setFont(Theme::iconFont(12));
         deletePlaylistBtn->setToolTip(Lang::tr("Excluir playlist"));
-        deletePlaylistBtn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(deletePlaylistBtn, QString(
             "QPushButton { background: rgba(255,255,255,0.05); color: %1; border: none; border-radius: 16px; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { background: rgba(255,255,255,0.12); color: %2; }"
         ).arg(Theme::textMuted().name(), Theme::danger().name()));
@@ -244,7 +245,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
             dlg->setInformativeText(Lang::tr("As músicas não serão apagadas — ficarão como músicas avulsas."));
             dlg->setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
             dlg->setDefaultButton(QMessageBox::Cancel);
-            dlg->setStyleSheet(QString(
+            lumen::design::StyleSheet::apply(dlg, QString(
                 "QMessageBox { background: %1; color: %2; } QLabel { color: %2; background: transparent; }"
                 "QPushButton { background: %3; color: %2; border: 1px solid %4; border-radius: 8px; padding: 6px 16px; min-width: 70px; }"
             ).arg(Theme::surface().name(), Theme::text().name(), Theme::card().name(), Theme::border().name()));
@@ -263,7 +264,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         .arg(tracks.size() != 1 ? "s" : "")
         .arg(total > 0 ? QString(" • %1").arg(Theme::formatTime(total)) : ""));
     statsLabel->setFont(Theme::bodyFont(12));
-    statsLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(statsLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     infoLayout->addWidget(statsLabel);
     infoLayout->addStretch();
 
@@ -271,7 +272,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
 
     auto *headerWidget = new QWidget();
     headerWidget->setLayout(headerLayout);
-    headerWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(headerWidget, "background: transparent;");
     m_contentLayout->addWidget(headerWidget);
     m_contentLayout->addSpacing(12);
 
@@ -284,7 +285,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         playBtn->setFixedSize(48, 48);
         playBtn->setCursor(Qt::PointingHandCursor);
         playBtn->setFont(Theme::iconFont(16));
-        playBtn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(playBtn, QString(
             "QPushButton { background: %1; color: %2; border: none; border-radius: 24px; font-family: \"Segoe MDL2 Assets\"; font-size: 16px; }"
             "QPushButton:hover { background: %3; }"
         ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
@@ -300,7 +301,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         searchEdit->setFont(Theme::bodyFont(11));
         searchEdit->setClearButtonEnabled(true);
         searchEdit->setFixedSize(220, 34);
-        searchEdit->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(searchEdit, QString(
             "QLineEdit { background: %1; color: %2; border: 1px solid %3; border-radius: 17px; padding: 0 14px; }"
             "QLineEdit:focus { border-color: %4; }"
         ).arg(Theme::surface().name(), Theme::text().name(),
@@ -319,7 +320,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         sortBtn->setCursor(Qt::PointingHandCursor);
         sortBtn->setFont(Theme::bodyFont(11));
         sortBtn->setToolTip(Lang::tr("Ordenar"));
-        sortBtn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(sortBtn, QString(
             "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 17px; padding: 0 14px; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %3; border-color: %3; }"
         ).arg(Theme::textSoft().name(), Theme::border().name(), Theme::accent().name()));
@@ -328,7 +329,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
 
         auto *controlsWidget = new QWidget();
         controlsWidget->setLayout(controlsRow);
-        controlsWidget->setStyleSheet("background: transparent;");
+        lumen::design::StyleSheet::apply(controlsWidget, "background: transparent;");
         m_contentLayout->addWidget(controlsWidget);
         m_contentLayout->addSpacing(8);
     }
@@ -337,7 +338,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
     auto *list = new ReorderableList();
     m_trackList = list;
     list->setFrameShape(QFrame::NoFrame);
-    list->setStyleSheet("QListWidget { background: transparent; border: none; }"
+    lumen::design::StyleSheet::apply(list, "QListWidget { background: transparent; border: none; }"
                         "QListWidget::item { border: none; }"
                         "QListWidget::item:selected { background: transparent; }");
     list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -365,7 +366,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         // The row itself ignores mouse events (they propagate to the list,
         // which handles click-to-play and drag-to-reorder), but its buttons
         // must stay clickable — so no WA_TransparentForMouseEvents here.
-        row->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(row, QString(
             "QWidget#trackRow { background: %1; border-radius: 8px; border-left: 3px solid %2; }"
         ).arg(active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"),
               active ? Theme::accent().name() : "transparent"));
@@ -379,7 +380,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         idx->setFont(Theme::monoFont(12));
         idx->setFixedWidth(28);
         idx->setAlignment(Qt::AlignCenter);
-        idx->setStyleSheet(QString("color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;").arg(active ? Theme::accent().name() : Theme::textMuted().name()));
+        lumen::design::StyleSheet::apply(idx, QString("color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;").arg(active ? Theme::accent().name() : Theme::textMuted().name()));
         idx->setAttribute(Qt::WA_TransparentForMouseEvents);
         layout->addWidget(idx);
         // Hovering the row swaps the number for a play glyph.
@@ -388,7 +389,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         auto *swatch = new QWidget();
         swatch->setFixedSize(38, 38);
         swatch->setAttribute(Qt::WA_TransparentForMouseEvents);
-        swatch->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
+        lumen::design::StyleSheet::apply(swatch, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
             .arg(track.cover.c1.name(), track.cover.c2.name()));
         layout->addWidget(swatch);
 
@@ -397,11 +398,11 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         auto *titleLabel = new QLabel(track.title);
         titleLabel->setFont(Theme::bodyFont(13));
         titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-        titleLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: 600;").arg(active ? Theme::accent().name() : Theme::text().name()));
+        lumen::design::StyleSheet::apply(titleLabel, QString("color: %1; background: transparent; font-weight: 600;").arg(active ? Theme::accent().name() : Theme::text().name()));
         auto *artistLabel = new QLabel(track.artist);
         artistLabel->setFont(Theme::bodyFont(11));
         artistLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-        artistLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+        lumen::design::StyleSheet::apply(artistLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
         infoCol->addWidget(titleLabel);
         infoCol->addWidget(artistLabel);
         layout->addLayout(infoCol, 1);
@@ -412,7 +413,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         enqueueBtn->setCursor(Qt::PointingHandCursor);
         enqueueBtn->setFont(Theme::iconFont(11));
         enqueueBtn->setToolTip(Lang::tr("Adicionar à fila"));
-        enqueueBtn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(enqueueBtn, QString(
             "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %2; }"
         ).arg(Theme::textMuted().name(), Theme::accent().name()));
@@ -426,7 +427,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         moveBtn->setCursor(Qt::PointingHandCursor);
         moveBtn->setFont(Theme::iconFont(11));
         moveBtn->setToolTip(isStandalone ? Lang::tr("Adicionar à playlist") : Lang::tr("Mover para outra playlist"));
-        moveBtn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(moveBtn, QString(
             "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %2; }"
         ).arg(Theme::textMuted().name(), Theme::accent().name()));
@@ -437,7 +438,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         auto *likeBtn = new QPushButton(track.liked ? "\uE00B" : "\uE006");
         likeBtn->setFixedSize(28, 28);
         likeBtn->setCursor(Qt::PointingHandCursor);
-        likeBtn->setStyleSheet(QString("QPushButton { background: transparent; color: %1; border: none; font-size: 14px; font-family: \"Segoe MDL2 Assets\"; }").arg(
+        lumen::design::StyleSheet::apply(likeBtn, QString("QPushButton { background: transparent; color: %1; border: none; font-size: 14px; font-family: \"Segoe MDL2 Assets\"; }").arg(
             track.liked ? Theme::accent().name() : Theme::textMuted().name()));
         int lid = track.id;
         connect(likeBtn, &QPushButton::clicked, [this, lid]() { emit likeToggled(lid); });
@@ -448,14 +449,14 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         dur->setFixedWidth(40);
         dur->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         dur->setAttribute(Qt::WA_TransparentForMouseEvents);
-        dur->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+        lumen::design::StyleSheet::apply(dur, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
         layout->addWidget(dur);
 
         auto *editBtn = new QPushButton(QStringLiteral("\uE70F"));
         editBtn->setFixedSize(24, 24);
         editBtn->setCursor(Qt::PointingHandCursor);
         editBtn->setToolTip(Lang::tr("Editar m\u00FAsica"));
-        editBtn->setStyleSheet(QString("QPushButton { background: transparent; color: %1; border: none; font-size: 11px; font-family: \"Segoe MDL2 Assets\"; } QPushButton:hover { color: %2; }").arg(
+        lumen::design::StyleSheet::apply(editBtn, QString("QPushButton { background: transparent; color: %1; border: none; font-size: 11px; font-family: \"Segoe MDL2 Assets\"; } QPushButton:hover { color: %2; }").arg(
             Theme::textMuted().name(), Theme::accent().name()));
         Track et = track;
         connect(editBtn, &QPushButton::clicked, [this, et]() { emit editTrackRequested(et); });
@@ -464,7 +465,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         auto *delBtn = new QPushButton("\uE107");
         delBtn->setFixedSize(24, 24);
         delBtn->setCursor(Qt::PointingHandCursor);
-        delBtn->setStyleSheet(QString("QPushButton { background: transparent; color: %1; border: none; font-size: 11px; font-family: \"Segoe MDL2 Assets\"; } QPushButton:hover { color: %2; }").arg(
+        lumen::design::StyleSheet::apply(delBtn, QString("QPushButton { background: transparent; color: %1; border: none; font-size: 11px; font-family: \"Segoe MDL2 Assets\"; } QPushButton:hover { color: %2; }").arg(
             Theme::textMuted().name(), Theme::danger().name()));
         int did = track.id;
         connect(delBtn, &QPushButton::clicked, [this, did]() { emit deleteRequested(did); });
@@ -522,7 +523,7 @@ void FolderDetailPage::applyFilter() {
 
 void FolderDetailPage::showSortMenu() {
     auto *menu = new QMenu(this);
-    menu->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(menu, QString(
         "QMenu { background: %1; border: 1px solid %2; border-radius: 8px; padding: 4px; color: %3; }"
         "QMenu::item { padding: 8px 16px; border-radius: 4px; }"
         "QMenu::item:selected { background: %4; }"
@@ -547,7 +548,7 @@ void FolderDetailPage::showEditDialog() {
     dlg->setWindowTitle(Lang::tr("Editar Playlist"));
     dlg->setFixedSize(380, 300);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
         "QLabel { background: transparent; color: %2; }"
         "QLineEdit { background: %3; color: %2; border: 1px solid %4; border-radius: 8px; padding: 8px 12px; }"
@@ -587,12 +588,12 @@ void FolderDetailPage::showEditDialog() {
 
     auto *preview = new QWidget();
     preview->setFixedSize(50, 32);
-    preview->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
+    lumen::design::StyleSheet::apply(preview, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
         .arg(c1->name(), c2->name()));
     colorRow->addWidget(preview);
 
     auto updatePrev = [preview, c1, c2]() {
-        preview->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
+        lumen::design::StyleSheet::apply(preview, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
             .arg(c1->name(), c2->name()));
     };
 
@@ -600,12 +601,12 @@ void FolderDetailPage::showEditDialog() {
     btn1->setFixedSize(60, 32);
     btn1->setCursor(Qt::PointingHandCursor);
     btn1->setFont(Theme::bodyFont(11));
-    btn1->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c1->name()));
+    lumen::design::StyleSheet::apply(btn1, QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c1->name()));
     connect(btn1, &QPushButton::clicked, [btn1, c1, updatePrev, dlg]() {
         QColor chosen = QColorDialog::getColor(*c1, dlg, Lang::tr("Cor 1"));
         if (chosen.isValid()) {
             *c1 = chosen;
-            btn1->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c1->name()));
+            lumen::design::StyleSheet::apply(btn1, QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c1->name()));
             updatePrev();
         }
     });
@@ -615,12 +616,12 @@ void FolderDetailPage::showEditDialog() {
     btn2->setFixedSize(60, 32);
     btn2->setCursor(Qt::PointingHandCursor);
     btn2->setFont(Theme::bodyFont(11));
-    btn2->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c2->name()));
+    lumen::design::StyleSheet::apply(btn2, QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c2->name()));
     connect(btn2, &QPushButton::clicked, [btn2, c2, updatePrev, dlg]() {
         QColor chosen = QColorDialog::getColor(*c2, dlg, Lang::tr("Cor 2"));
         if (chosen.isValid()) {
             *c2 = chosen;
-            btn2->setStyleSheet(QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c2->name()));
+            lumen::design::StyleSheet::apply(btn2, QString("background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;").arg(c2->name()));
             updatePrev();
         }
     });
@@ -639,7 +640,7 @@ void FolderDetailPage::showEditDialog() {
 
     auto *imgPreview = new QLabel();
     imgPreview->setFixedSize(50, 32);
-    imgPreview->setStyleSheet(QString("background: %1; border-radius: 6px;").arg(Theme::bg().name()));
+    lumen::design::StyleSheet::apply(imgPreview, QString("background: %1; border-radius: 6px;").arg(Theme::bg().name()));
     if (!currentImage.isEmpty()) {
         QPixmap pm = Theme::roundedCover(currentImage, 50, 32, 6);
         if (!pm.isNull()) imgPreview->setPixmap(pm);
@@ -650,7 +651,7 @@ void FolderDetailPage::showEditDialog() {
     pickImageBtn->setFont(Theme::bodyFont(11));
     pickImageBtn->setFixedHeight(32);
     pickImageBtn->setCursor(Qt::PointingHandCursor);
-    pickImageBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(pickImageBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 8px; padding: 0 10px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
@@ -669,14 +670,14 @@ void FolderDetailPage::showEditDialog() {
     clearImageBtn->setFixedHeight(32);
     clearImageBtn->setCursor(Qt::PointingHandCursor);
     clearImageBtn->setToolTip(Lang::tr("Voltar a usar o gradiente de cores"));
-    clearImageBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(clearImageBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 8px; padding: 0 10px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
     connect(clearImageBtn, &QPushButton::clicked, [imagePath, imgPreview]() {
         imagePath->clear();
         imgPreview->setPixmap(QPixmap());
-        imgPreview->setStyleSheet(QString("background: %1; border-radius: 6px;").arg(Theme::bg().name()));
+        lumen::design::StyleSheet::apply(imgPreview, QString("background: %1; border-radius: 6px;").arg(Theme::bg().name()));
     });
     imageRow->addWidget(clearImageBtn);
     imageRow->addStretch();
@@ -688,7 +689,7 @@ void FolderDetailPage::showEditDialog() {
     cancelBtn->setFont(Theme::bodyFont(12));
     cancelBtn->setFixedHeight(36);
     cancelBtn->setCursor(Qt::PointingHandCursor);
-    cancelBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(cancelBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; padding: 0 16px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
@@ -699,7 +700,7 @@ void FolderDetailPage::showEditDialog() {
     saveBtn->setFont(Theme::bodyFont(12));
     saveBtn->setFixedHeight(36);
     saveBtn->setCursor(Qt::PointingHandCursor);
-    saveBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(saveBtn, QString(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 18px; padding: 0 20px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
     ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
@@ -730,7 +731,7 @@ void FolderDetailPage::showMoveDialog(int trackId) {
     auto playlists = m_model->folders();
 
     auto *menu = new QMenu(this);
-    menu->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(menu, QString(
         "QMenu { background: %1; border: 1px solid %2; border-radius: 8px; padding: 4px; color: %3; }"
         "QMenu::item { padding: 8px 16px; border-radius: 4px; }"
         "QMenu::item:selected { background: %4; }"
@@ -772,7 +773,7 @@ void FolderDetailPage::showCoverLightbox(const QString &imagePath) {
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setAttribute(Qt::WA_TranslucentBackground);
     dlg->setModal(true);
-    dlg->setStyleSheet("QDialog { background: rgba(0,0,0,0.88); }");
+    lumen::design::StyleSheet::apply(dlg, "QDialog { background: rgba(0,0,0,0.88); }");
 
     // Cover the whole application window.
     QWidget *top = window();
@@ -785,7 +786,7 @@ void FolderDetailPage::showCoverLightbox(const QString &imagePath) {
     // Backdrop click closes the lightbox.
     auto *backdrop = new QPushButton(dlg);
     backdrop->setGeometry(0, 0, dlg->width(), dlg->height());
-    backdrop->setStyleSheet("background: transparent; border: none;");
+    lumen::design::StyleSheet::apply(backdrop, "background: transparent; border: none;");
     backdrop->setCursor(Qt::PointingHandCursor);
     backdrop->lower();
     connect(backdrop, &QPushButton::clicked, dlg, &QDialog::accept);
@@ -796,7 +797,7 @@ void FolderDetailPage::showCoverLightbox(const QString &imagePath) {
     side = qBound(240, side, 640);
     auto *imgLabel = new QLabel();
     imgLabel->setAlignment(Qt::AlignCenter);
-    imgLabel->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(imgLabel, "background: transparent;");
     imgLabel->setPixmap(full.scaled(side, side, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     layout->addWidget(imgLabel, 0, Qt::AlignCenter);
 
@@ -804,7 +805,7 @@ void FolderDetailPage::showCoverLightbox(const QString &imagePath) {
     closeBtn->setFont(Theme::bodyFont(13));
     closeBtn->setFixedHeight(38);
     closeBtn->setCursor(Qt::PointingHandCursor);
-    closeBtn->setStyleSheet(
+    lumen::design::StyleSheet::apply(closeBtn, 
         "QPushButton { background: transparent; color: white; border: none; padding: 0 24px; font-weight: bold; }"
         "QPushButton:hover { color: rgba(255,255,255,0.7); }");
     connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);

@@ -1,3 +1,4 @@
+#include "design/stylesheet.h"
 #include "playerbar.h"
 #include "lang.h"
 #include "database.h"
@@ -11,7 +12,7 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     : QWidget(parent), m_model(model)
 {
     setFixedHeight(90);
-    setStyleSheet(QString("PlayerBar { background-color: %1; border-top: 1px solid %2; }")
+    lumen::design::StyleSheet::apply(this, QString("PlayerBar { background-color: %1; border-top: 1px solid %2; }")
         .arg(Theme::surface().name(), Theme::border().name()));
 
     m_player = new QMediaPlayer(this);
@@ -40,12 +41,12 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     infoLayout->setSpacing(1);
     m_titleLabel = new QLabel("", this);
     m_titleLabel->setFont(Theme::bodyFont(13));
-    m_titleLabel->setStyleSheet(QString("color: %1; font-weight: 600; background: transparent;").arg(Theme::text().name()));
+    lumen::design::StyleSheet::apply(m_titleLabel, QString("color: %1; font-weight: 600; background: transparent;").arg(Theme::text().name()));
     m_titleLabel->setMaximumWidth(180);
 
     m_artistLabel = new QLabel("", this);
     m_artistLabel->setFont(Theme::bodyFont(11));
-    m_artistLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(m_artistLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     m_artistLabel->setMaximumWidth(180);
 
     infoLayout->addStretch();
@@ -59,12 +60,12 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     auto *leftWidget = new QWidget(this);
     leftWidget->setLayout(leftLayout);
     leftWidget->setFixedWidth(240);
-    leftWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(leftWidget, "background: transparent;");
     mainLayout->addWidget(leftWidget);
 
     // Center: controls + progress
     m_controlsContainer = new QWidget(this);
-    m_controlsContainer->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(m_controlsContainer, "background: transparent;");
     auto *centerLayout = new QVBoxLayout(m_controlsContainer);
     centerLayout->setContentsMargins(0, 8, 0, 8);
     centerLayout->setSpacing(4);
@@ -82,12 +83,12 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     for (auto *btn : {m_shuffleBtn, m_prevBtn, m_nextBtn, m_repeatBtn}) {
         btn->setFixedSize(32, 32);
         btn->setCursor(Qt::PointingHandCursor);
-        btn->setStyleSheet(buttonStyle(false));
+        lumen::design::StyleSheet::apply(btn, buttonStyle(false));
     }
 
     m_playBtn->setFixedSize(38, 38);
     m_playBtn->setCursor(Qt::PointingHandCursor);
-    m_playBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_playBtn, QString(
         "QPushButton { background-color: %1; color: %2; border: none; border-radius: 19px; font-size: 16px; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { background-color: %3; }"
     ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
@@ -106,18 +107,18 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
 
     m_timeLabel = new QLabel("0:00", this);
     m_timeLabel->setFont(Theme::monoFont(10));
-    m_timeLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(m_timeLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     m_timeLabel->setFixedWidth(36);
     m_timeLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     m_progressSlider = new ClickableSlider(Qt::Horizontal, this);
     m_progressSlider->setRange(0, 1000);
     m_progressSlider->setValue(0);
-    m_progressSlider->setStyleSheet(sliderStyle(Theme::accent().name()));
+    lumen::design::StyleSheet::apply(m_progressSlider, sliderStyle(Theme::accent().name()));
 
     m_durationLabel = new QLabel("0:00", this);
     m_durationLabel->setFont(Theme::monoFont(10));
-    m_durationLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(m_durationLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     m_durationLabel->setFixedWidth(36);
     m_durationLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
@@ -139,7 +140,7 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     m_queueBtn->setCursor(Qt::PointingHandCursor);
     m_queueBtn->setFont(Theme::iconFont(14));
     m_queueBtn->setToolTip(Lang::tr("Fila de reprodu\u00E7\u00E3o"));
-    m_queueBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_queueBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 4px; }"
         "QPushButton:hover { color: %2; background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textMuted().name(), Theme::textSoft().name()));
@@ -150,7 +151,7 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     m_volIcon->setCursor(Qt::PointingHandCursor);
     m_volIcon->setFont(Theme::iconFont(14));
     m_volIcon->setToolTip(Lang::tr("Silenciar"));
-    m_volIcon->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_volIcon, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 4px; }"
         "QPushButton:hover { color: %2; background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textMuted().name(), Theme::textSoft().name()));
@@ -159,7 +160,7 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     m_volumeSlider->setRange(0, 100);
     m_volumeSlider->setValue(savedVolume);
     m_volumeSlider->setFixedSize(100, 24);
-    m_volumeSlider->setStyleSheet(sliderStyle(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(m_volumeSlider, sliderStyle(Theme::textSoft().name()));
     updateVolIcon();   // reflect the restored mute state on the icon
 
     // Everything pinned to the same 24px center line, with uniform spacing.
@@ -171,13 +172,13 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
     auto *rightWidget = new QWidget(this);
     rightWidget->setLayout(volLayout);
     rightWidget->setFixedWidth(196);
-    rightWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(rightWidget, "background: transparent;");
     mainLayout->addWidget(rightWidget);
 
     // Empty state label
     m_emptyLabel = new QLabel(Lang::tr("Adicione músicas para começar a ouvir"), this);
     m_emptyLabel->setFont(Theme::bodyFont(12));
-    m_emptyLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(m_emptyLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     m_emptyLabel->setAlignment(Qt::AlignCenter);
 
     m_controlsContainer->hide();
@@ -191,12 +192,12 @@ PlayerBar::PlayerBar(TrackModel *model, QWidget *parent)
 
     connect(m_shuffleBtn, &QPushButton::clicked, this, [this]() {
         m_shuffle = !m_shuffle;
-        m_shuffleBtn->setStyleSheet(buttonStyle(m_shuffle));
+        lumen::design::StyleSheet::apply(m_shuffleBtn, buttonStyle(m_shuffle));
     });
 
     connect(m_repeatBtn, &QPushButton::clicked, this, [this]() {
         m_repeat = !m_repeat;
-        m_repeatBtn->setStyleSheet(buttonStyle(m_repeat));
+        lumen::design::StyleSheet::apply(m_repeatBtn, buttonStyle(m_repeat));
     });
 
     connect(m_progressSlider, &QSlider::sliderMoved, this, [this](int val) {
@@ -458,8 +459,8 @@ void PlayerBar::onMediaStatusChanged(QMediaPlayer::MediaStatus status) {
 }
 
 void PlayerBar::updateControls() {
-    m_shuffleBtn->setStyleSheet(buttonStyle(m_shuffle));
-    m_repeatBtn->setStyleSheet(buttonStyle(m_repeat));
+    lumen::design::StyleSheet::apply(m_shuffleBtn, buttonStyle(m_shuffle));
+    lumen::design::StyleSheet::apply(m_repeatBtn, buttonStyle(m_repeat));
 }
 
 QString PlayerBar::buttonStyle(bool active) const {

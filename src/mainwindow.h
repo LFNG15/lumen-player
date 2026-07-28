@@ -25,9 +25,6 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 
-signals:
-    void themeChangeRequested();
-
 protected:
     void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
@@ -38,6 +35,7 @@ private slots:
     void onTrackPlay(const Track &track);
     void showThemePicker();
     void showLanguagePicker();
+    void onDesignChanged();  // live theme / language — no restart
 
 private:
     QWidget *buildTopBar();
@@ -51,6 +49,7 @@ private:
     void confirmDeleteTrack(const Track &track);
     void showSidebarSortMenu();
     void toggleSidebarSearch();
+    void reapplyChromeStyles();
 
     TrackModel *m_model;
     PlayerBar *m_playerBar;

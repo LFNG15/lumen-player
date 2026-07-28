@@ -42,6 +42,13 @@ set(PROJECT_SOURCES
     src/main.cpp
     src/database/database.cpp
     src/database/migrator.cpp
+    src/design/tokens.cpp
+    src/design/palettes.cpp
+    src/design/thememanager.cpp
+    src/design/stylesheet.cpp
+    src/design/components.cpp
+    src/design/paint.cpp
+    src/design/i18n.cpp
     src/mainwindow.cpp
     src/pages/homepage.cpp
     src/pages/addmusicpage.cpp
@@ -61,6 +68,14 @@ set(PROJECT_HEADERS
     src/mainwindow.h
     src/database/database.h
     src/database/migrator.h
+    src/design/tokens.h
+    src/design/palettes.h
+    src/design/thememanager.h
+    src/design/stylesheet.h
+    src/design/components.h
+    src/design/paint.h
+    src/design/icons.h
+    src/design/i18n.h
     src/pages/homepage.h
     src/pages/addmusicpage.h
     src/pages/folderspage.h
@@ -94,6 +109,7 @@ target_include_directories(LumenMusic PRIVATE
     src/player
     src/widgets
     src/database
+    src/design
 )
 
 target_link_libraries(LumenMusic PRIVATE

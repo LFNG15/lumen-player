@@ -1,5 +1,10 @@
+#include "design/stylesheet.h"
+#include "design/thememanager.h"
+#include "design/i18n.h"
+#include "design/palettes.h"
 #include "mainwindow.h"
 #include "lang.h"
+#include "theme.h"
 #include <QLabel>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -14,6 +19,9 @@
 #include <QSplitter>
 #include <QCloseEvent>
 #include <QMenu>
+#include <QButtonGroup>
+#include <QRadioButton>
+#include <QCheckBox>
 #include <algorithm>
 #include "coverwidget.h"
 #include "textutils.h"
@@ -30,7 +38,7 @@ MainWindow::MainWindow(QWidget *parent)
     // ── Central widget ──────────────────────────────────────
     auto *central = new QWidget(this);
     setCentralWidget(central);
-    central->setStyleSheet(Theme::globalStyleSheet());
+    lumen::design::StyleSheet::apply(central, Theme::globalStyleSheet());
 
     auto *mainLayout = new QVBoxLayout(central);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -40,20 +48,21 @@ MainWindow::MainWindow(QWidget *parent)
     m_splitter = new QSplitter(Qt::Horizontal);
     m_splitter->setChildrenCollapsible(false);
     m_splitter->setHandleWidth(2);
-    m_splitter->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_splitter, QString(
         "QSplitter::handle { background: %1; }"
         "QSplitter::handle:hover { background: %2; }"
     ).arg(Theme::border().name(), Theme::accentRgba(0.5)));
 
     // ── Sidebar ─────────────────────────────────────────────
     m_sidebar = new QWidget();
-    m_sidebar->setStyleSheet(QString("background-color: %1;").arg(Theme::surface().name()));
+    m_sidebar->setObjectName(QStringLiteral("lumenSidebar"));
+    lumen::design::StyleSheet::apply(m_sidebar, QString("background-color: %1;").arg(Theme::surface().name()));
     buildSidebar(m_sidebar);
     m_splitter->addWidget(m_sidebar);
 
     // ── Stacked pages ───────────────────────────────────────
     m_stack = new QStackedWidget();
-    m_stack->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(m_stack, "background: transparent;");
 
     m_homePage = new HomePage(m_model, this);
     m_addPage = new AddMusicPage(m_model, this);
@@ -70,7 +79,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Content column: global search bar on top of the pages.
     auto *contentWidget = new QWidget();
-    contentWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(contentWidget, "background: transparent;");
     contentWidget->setMinimumWidth(340);
     auto *contentColumn = new QVBoxLayout(contentWidget);
     contentColumn->setContentsMargins(0, 0, 0, 0);
@@ -117,6 +126,12 @@ MainWindow::MainWindow(QWidget *parent)
         if (!m_sidebarCollapsed && settings.value("sidebarView", "list").toString() == "grid")
             refreshSidebarFolders();
     });
+
+    // Live theme + language (P1) — polish chrome and rebuild visible pages.
+    connect(&lumen::design::ThemeManager::instance(), &lumen::design::ThemeManager::changed,
+            this, &MainWindow::onDesignChanged);
+    connect(&lumen::design::LanguageManager::instance(), &lumen::design::LanguageManager::changed,
+            this, &MainWindow::onDesignChanged);
 
     // ── Connections ─────────────────────────────────────────
     // Home page
@@ -271,7 +286,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 QWidget *MainWindow::buildTopBar() {
     auto *bar = new QWidget();
     bar->setFixedHeight(56);
-    bar->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(bar, "background: transparent;");
 
     auto *layout = new QHBoxLayout(bar);
     layout->setContentsMargins(32, 10, 32, 6);
@@ -282,7 +297,7 @@ QWidget *MainWindow::buildTopBar() {
     pill->setObjectName("searchPill");
     pill->setFixedHeight(40);
     pill->setMaximumWidth(440);
-    pill->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(pill, QString(
         "QWidget#searchPill { background: %1; border: 1px solid %2; border-radius: 20px; }"
     ).arg(Theme::surface().name(), Theme::border().name()));
 
@@ -292,14 +307,14 @@ QWidget *MainWindow::buildTopBar() {
 
     auto *searchIcon = new QLabel("");
     searchIcon->setFont(Theme::iconFont(13));
-    searchIcon->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(searchIcon, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     pillLayout->addWidget(searchIcon);
 
     m_searchEdit = new QLineEdit();
     m_searchEdit->setPlaceholderText(Lang::tr("O que você quer ouvir?"));
     m_searchEdit->setFont(Theme::bodyFont(12));
     m_searchEdit->setClearButtonEnabled(true);
-    m_searchEdit->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_searchEdit, QString(
         "QLineEdit { background: transparent; color: %1; border: none; }"
     ).arg(Theme::text().name()));
     pillLayout->addWidget(m_searchEdit, 1);
@@ -327,7 +342,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 
     // Logo
     auto *logoWidget = new QWidget();
-    logoWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(logoWidget, "background: transparent;");
     m_logoLayout = new QHBoxLayout(logoWidget);
     m_logoLayout->setContentsMargins(20, 20, 20, 16);
     m_logoLayout->setSpacing(8);
@@ -335,19 +350,19 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     auto *logoIcon = new QLabel();
     logoIcon->setFixedSize(30, 30);
     logoIcon->setScaledContents(true);
-    logoIcon->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(logoIcon, "background: transparent;");
     logoIcon->setPixmap(QIcon(":/icon.png").pixmap(30, 30));
     m_logoLayout->addWidget(logoIcon);
 
     m_logoText = new QLabel("Lumen");
     m_logoText->setFont(Theme::titleFont(18));
-    m_logoText->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
+    lumen::design::StyleSheet::apply(m_logoText, QString("color: %1; background: transparent;").arg(Theme::text().name()));
     m_logoLayout->addWidget(m_logoText);
 
     m_badge = new QLabel("MUSIC");
     m_badge->setFont(Theme::bodyFont(9));
     QColor ac = Theme::accent();
-    m_badge->setStyleSheet(QString("color: %1; background: rgba(%2,%3,%4,0.16); border-radius: 4px; padding: 2px 6px; font-weight: bold; letter-spacing: 1px;")
+    lumen::design::StyleSheet::apply(m_badge, QString("color: %1; background: rgba(%2,%3,%4,0.16); border-radius: 4px; padding: 2px 6px; font-weight: bold; letter-spacing: 1px;")
         .arg(Theme::accent().name()).arg(ac.red()).arg(ac.green()).arg(ac.blue()));
     m_logoLayout->addWidget(m_badge);
     m_logoLayout->addStretch();
@@ -357,7 +372,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_collapseBtn->setFixedSize(24, 24);
     m_collapseBtn->setCursor(Qt::PointingHandCursor);
     m_collapseBtn->setFont(Theme::iconFont(10));
-    m_collapseBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_collapseBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 12px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::text().name()));
@@ -370,7 +385,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 
     // Navigation buttons
     auto *navWidget = new QWidget();
-    navWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(navWidget, "background: transparent;");
     auto *navLayout = new QVBoxLayout(navWidget);
     navLayout->setContentsMargins(10, 0, 10, 0);
     navLayout->setSpacing(2);
@@ -383,7 +398,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         // Stash the parts so the collapsed mode can show the icon alone.
         btn->setProperty("navIcon", icon);
         btn->setProperty("navText", text);
-        btn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(btn, QString(
             "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; text-align: left; padding-left: 14px; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { background: rgba(255,255,255,0.05); color: %2; }"
         ).arg(Theme::textSoft().name(), Theme::text().name()));
@@ -407,14 +422,14 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     // Sidebar folders header: label + search toggle + sort/view menu,
     // like Spotify's "Your Library" header.
     m_foldersHeaderRow = new QWidget();
-    m_foldersHeaderRow->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(m_foldersHeaderRow, "background: transparent;");
     auto *headerLayout = new QHBoxLayout(m_foldersHeaderRow);
     headerLayout->setContentsMargins(20, 16, 14, 4);
     headerLayout->setSpacing(2);
 
     m_foldersHeader = new QLabel(Lang::tr("SUAS PLAYLISTS"));
     m_foldersHeader->setFont(Theme::bodyFont(10));
-    m_foldersHeader->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;")
+    lumen::design::StyleSheet::apply(m_foldersHeader, QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;")
         .arg(Theme::textMuted().name()));
     headerLayout->addWidget(m_foldersHeader);
     headerLayout->addStretch();
@@ -425,7 +440,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFont(Theme::iconFont(11));
         btn->setToolTip(tip);
-        btn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(btn, QString(
             "QPushButton { background: transparent; color: %1; border: none; border-radius: 12px; }"
             "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
         ).arg(Theme::textMuted().name(), Theme::text().name()));
@@ -448,7 +463,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_sidebarSearchEdit->setFont(Theme::bodyFont(11));
     m_sidebarSearchEdit->setClearButtonEnabled(true);
     m_sidebarSearchEdit->setFixedHeight(30);
-    m_sidebarSearchEdit->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_sidebarSearchEdit, QString(
         "QLineEdit { background: %1; color: %2; border: 1px solid %3; border-radius: 15px; padding: 0 12px; margin: 0 10px 4px; }"
         "QLineEdit:focus { border-color: %4; }"
     ).arg(Theme::surface().name(), Theme::text().name(),
@@ -463,10 +478,10 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     auto *scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
-    scrollArea->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+    lumen::design::StyleSheet::apply(scrollArea, "QScrollArea { background: transparent; border: none; }");
 
     m_sidebarFoldersContainer = new QWidget();
-    m_sidebarFoldersContainer->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(m_sidebarFoldersContainer, "background: transparent;");
     m_sidebarFoldersLayout = new QVBoxLayout(m_sidebarFoldersContainer);
     m_sidebarFoldersLayout->setContentsMargins(10, 0, 10, 0);
     m_sidebarFoldersLayout->setSpacing(1);
@@ -478,12 +493,12 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     // Footer
     auto *footerSep = new QFrame();
     footerSep->setFrameShape(QFrame::HLine);
-    footerSep->setStyleSheet(QString("color: %1;").arg(Theme::border().name()));
+    lumen::design::StyleSheet::apply(footerSep, QString("color: %1;").arg(Theme::border().name()));
     footerSep->setFixedHeight(1);
     layout->addWidget(footerSep);
 
     auto *footerWidget = new QWidget();
-    footerWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(footerWidget, "background: transparent;");
     auto *footerLayout = new QHBoxLayout(footerWidget);
     footerLayout->setContentsMargins(20, 8, 12, 12);
     footerLayout->setSpacing(4);
@@ -492,7 +507,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         .arg(m_model->tracks().size())
         .arg(m_model->tracks().size() != 1 ? "s" : ""));
     m_trackCountLabel->setFont(Theme::bodyFont(10));
-    m_trackCountLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(m_trackCountLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     footerLayout->addWidget(m_trackCountLabel, 1);
 
     m_langBtn = new QPushButton(Lang::isEnglish() ? "EN" : "PT");
@@ -500,7 +515,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_langBtn->setCursor(Qt::PointingHandCursor);
     m_langBtn->setFont(Theme::bodyFont(9));
     m_langBtn->setToolTip(Lang::tr("Idioma"));
-    m_langBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_langBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; font-weight: bold; }"
         "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::accent().name()));
@@ -512,7 +527,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     themeBtn->setCursor(Qt::PointingHandCursor);
     themeBtn->setFont(Theme::iconFont(12));
     themeBtn->setToolTip(Lang::tr("Escolher tema"));
-    themeBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(themeBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::accent().name()));
@@ -619,13 +634,13 @@ void MainWindow::refreshSidebarFolders() {
         if (!m_sidebarCollapsed) {
             auto *emptyLabel = new QLabel(Lang::tr("Nenhuma playlist"));
             emptyLabel->setFont(Theme::bodyFont(11));
-            emptyLabel->setStyleSheet(QString("color: %1; background: transparent; padding: 4px 14px;").arg(Theme::textMuted().name()));
+            lumen::design::StyleSheet::apply(emptyLabel, QString("color: %1; background: transparent; padding: 4px 14px;").arg(Theme::textMuted().name()));
             m_sidebarFoldersLayout->addWidget(emptyLabel);
         }
     } else if (!m_sidebarCollapsed && viewMode == "grid") {
         // Grid of covers with the name underneath, like Spotify's grid view.
         auto *gridWidget = new QWidget();
-        gridWidget->setStyleSheet("background: transparent;");
+        lumen::design::StyleSheet::apply(gridWidget, "background: transparent;");
         auto *grid = new QGridLayout(gridWidget);
         grid->setContentsMargins(0, 0, 0, 0);
         grid->setSpacing(6);
@@ -651,10 +666,10 @@ void MainWindow::refreshSidebarFolders() {
             auto *nameLabel = new QLabel(QFontMetrics(Theme::bodyFont(10))
                 .elidedText(f.name, Qt::ElideRight, cellW - 12));
             nameLabel->setFont(Theme::bodyFont(10));
-            nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+            lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
             cellLayout->addWidget(nameLabel, 0, Qt::AlignHCenter);
 
-            btn->setStyleSheet(rowStyle(isActiveFolder(f)));
+            lumen::design::StyleSheet::apply(btn, rowStyle(isActiveFolder(f)));
             QString folderName = f.name;
             connect(btn, &QPushButton::clicked, [this, folderName]() { navigateTo("folder", folderName); });
             grid->addWidget(btn, i / cols, i % cols);
@@ -685,17 +700,17 @@ void MainWindow::refreshSidebarFolders() {
                 if (!compact)
                     btnLayout->addWidget(CoverWidget::playlistCover(f, tracks, 28, 5), 0, Qt::AlignVCenter);
                 auto *nameLabel = new QLabel(f.name);
-                nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+                lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
                 nameLabel->setFont(Theme::bodyFont(12));
                 auto *countLabel = new QLabel(QString::number(tracks.size()));
                 countLabel->setFont(Theme::monoFont(10));
-                countLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+                lumen::design::StyleSheet::apply(countLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
                 btnLayout->addWidget(nameLabel);
                 btnLayout->addStretch();
                 btnLayout->addWidget(countLabel);
             }
 
-            btn->setStyleSheet(rowStyle(isActiveFolder(f)));
+            lumen::design::StyleSheet::apply(btn, rowStyle(isActiveFolder(f)));
 
             QString folderName = f.name;
             connect(btn, &QPushButton::clicked, [this, folderName]() { navigateTo("folder", folderName); });
@@ -719,7 +734,7 @@ void MainWindow::toggleSidebarSearch() {
 
 void MainWindow::showSidebarSortMenu() {
     auto *menu = new QMenu(this);
-    menu->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(menu, QString(
         "QMenu { background: %1; border: 1px solid %2; border-radius: 8px; padding: 4px; color: %3; }"
         "QMenu::item { padding: 8px 16px; border-radius: 4px; }"
         "QMenu::item:selected { background: %4; }"
@@ -773,7 +788,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     dlg->setWindowTitle(Lang::tr("Editar Música"));
     dlg->setFixedSize(380, 200);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
         "QLabel { background: transparent; color: %2; }"
         "QLineEdit { background: %3; color: %2; border: 1px solid %4; border-radius: 8px; padding: 8px 12px; }"
@@ -805,7 +820,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     cancelBtn->setFont(Theme::bodyFont(12));
     cancelBtn->setFixedHeight(36);
     cancelBtn->setCursor(Qt::PointingHandCursor);
-    cancelBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(cancelBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; padding: 0 16px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
@@ -816,7 +831,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     saveBtn->setFont(Theme::bodyFont(12));
     saveBtn->setFixedHeight(36);
     saveBtn->setCursor(Qt::PointingHandCursor);
-    saveBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(saveBtn, QString(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 18px; padding: 0 20px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
     ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
@@ -840,7 +855,7 @@ void MainWindow::confirmDeleteTrack(const Track &track) {
     dlg->setInformativeText(Lang::tr("A música será removida da biblioteca."));
     dlg->setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
     dlg->setDefaultButton(QMessageBox::Cancel);
-    dlg->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(dlg, QString(
         "QMessageBox { background: %1; color: %2; } QLabel { color: %2; background: transparent; }"
         "QPushButton { background: %3; color: %2; border: 1px solid %4; border-radius: 8px; padding: 6px 16px; min-width: 70px; }"
         "QPushButton:hover { background: %5; }"
@@ -863,7 +878,7 @@ void MainWindow::showToast(const QString &text) {
     }
     // Light pill with dark text, like Spotify's "Added to queue".
     m_toast->setFont(Theme::bodyFont(12));
-    m_toast->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_toast, QString(
         "background: %1; color: %2; border-radius: 8px; padding: 10px 18px; font-weight: 600;")
         .arg(Theme::text().name(), Theme::bg().name()));
     m_toast->setText(text);
@@ -905,9 +920,9 @@ void MainWindow::navigateTo(const QString &page, const QString &data) {
         ).arg(Theme::textSoft().name(), Theme::text().name());
     };
 
-    m_navHome->setStyleSheet(activeStyle(page == "home"));
-    m_navAdd->setStyleSheet(activeStyle(page == "add"));
-    m_navFolders->setStyleSheet(activeStyle(page == "folders" || page == "folder"));
+    lumen::design::StyleSheet::apply(m_navHome, activeStyle(page == "home"));
+    lumen::design::StyleSheet::apply(m_navAdd, activeStyle(page == "add"));
+    lumen::design::StyleSheet::apply(m_navFolders, activeStyle(page == "folders" || page == "folder"));
 
     if (page == "home") {
         m_stack->setCurrentIndex(0);
@@ -967,12 +982,48 @@ void MainWindow::onTrackPlay(const Track &track) {
     refreshCurrentPage();
 }
 
+void MainWindow::onDesignChanged()
+{
+    reapplyChromeStyles();
+    if (m_langBtn)
+        m_langBtn->setText(Lang::isEnglish() ? QStringLiteral("EN") : QStringLiteral("PT"));
+    refreshSidebarFolders();
+    // Rebuild the visible page(s) so widget-local colors pick up new tokens.
+    if (m_foldersPage)
+        m_foldersPage->refresh();
+    refreshCurrentPage();
+    if (m_playerBar)
+        m_playerBar->update();
+    update();
+}
+
+void MainWindow::reapplyChromeStyles()
+{
+    if (centralWidget())
+        lumen::design::StyleSheet::apply(centralWidget(), Theme::globalStyleSheet());
+    if (m_sidebar)
+        lumen::design::StyleSheet::apply(m_sidebar,
+            QStringLiteral("background-color: %1;").arg(Theme::surface().name()));
+    if (m_playerBar) {
+        lumen::design::StyleSheet::apply(m_playerBar,
+            QStringLiteral("PlayerBar { background-color: %1; border-top: 1px solid %2; }")
+                .arg(Theme::surface().name(), Theme::border().name()));
+    }
+    if (m_logoText)
+        lumen::design::StyleSheet::apply(m_logoText,
+            QStringLiteral("color: %1; background: transparent;").arg(Theme::text().name()));
+    if (m_trackCountLabel)
+        lumen::design::StyleSheet::apply(m_trackCountLabel,
+            QStringLiteral("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    updateNavButtons();
+}
+
 void MainWindow::showLanguagePicker() {
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(Lang::tr("Idioma"));
     dlg->setFixedSize(280, 150);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
         "QLabel  { background: transparent; color: %2; }"
     ).arg(Theme::surface().name(), Theme::text().name()));
@@ -994,7 +1045,7 @@ void MainWindow::showLanguagePicker() {
         btn->setFixedHeight(38);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFont(Theme::bodyFont(12));
-        btn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(btn, QString(
             "QPushButton { background: %1; color: %2; border: 1px solid %3; border-radius: 10px; font-weight: bold; }"
             "QPushButton:hover { border-color: %4; }"
         ).arg(active ? Theme::accentRgba(0.15) : Theme::card().name(),
@@ -1003,12 +1054,10 @@ void MainWindow::showLanguagePicker() {
               Theme::accent().name()));
 
         QString id = opt.id;
-        connect(btn, &QPushButton::clicked, dlg, [this, id, dlg]() {
-            QSettings s;
-            s.setValue("language", id);
+        connect(btn, &QPushButton::clicked, dlg, [id, dlg]() {
+            // Live language switch — no restart (P1.5).
+            lumen::design::LanguageManager::instance().setLang(id);
             dlg->accept();
-            // Same restart path as switching themes.
-            emit themeChangeRequested();
         });
         layout->addWidget(btn);
     }
@@ -1019,9 +1068,9 @@ void MainWindow::showLanguagePicker() {
 void MainWindow::showThemePicker() {
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(Lang::tr("Escolher Tema"));
-    dlg->setFixedSize(356, 290);
+    dlg->setMinimumSize(380, 460);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
         "QLabel  { background: transparent; color: %2; }"
     ).arg(Theme::surface().name(), Theme::text().name()));
@@ -1044,11 +1093,11 @@ void MainWindow::showThemePicker() {
         const auto &t = themes[i];
 
         auto *btn = new QPushButton();
-        btn->setFixedSize(152, 72);
+        btn->setFixedSize(160, 72);
         btn->setCursor(Qt::PointingHandCursor);
 
         bool active = (t.id == curId);
-        btn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(btn, QString(
             "QPushButton {"
             "  background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
             "    stop:0 %1, stop:1 %2);"
@@ -1066,20 +1115,76 @@ void MainWindow::showThemePicker() {
 
         auto *nameLabel = new QLabel(Lang::tr(t.name));
         nameLabel->setFont(Theme::bodyFont(10));
-        nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(t.text.name()));
+        lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent;").arg(t.text.name()));
         nameLabel->setAlignment(Qt::AlignCenter);
         btnLayout->addWidget(nameLabel);
 
-        connect(btn, &QPushButton::clicked, dlg, [this, t, dlg]() {
-            QSettings s;
-            s.setValue("theme", t.id);
+        connect(btn, &QPushButton::clicked, dlg, [t, dlg]() {
+            // Live palette switch — no restart (P1.3).
+            lumen::design::ThemeManager::instance().setPaletteId(t.id);
             dlg->accept();
-            emit themeChangeRequested();
         });
 
         grid->addWidget(btn, i / 2, i % 2);
     }
-
     layout->addLayout(grid);
+
+    // Mode axis (dark / light / high contrast)
+    auto *modeLabel = new QLabel(Lang::tr("Modo"));
+    modeLabel->setFont(Theme::bodyFont(12));
+    layout->addWidget(modeLabel);
+    auto *modeRow = new QHBoxLayout();
+    auto *modeGroup = new QButtonGroup(dlg);
+    struct ModeOpt { lumen::design::Mode mode; const char *label; };
+    const ModeOpt modes[] = {
+        {lumen::design::Mode::Dark, "Escuro"},
+        {lumen::design::Mode::Light, "Claro"},
+        {lumen::design::Mode::HighContrast, "Alto contraste"},
+    };
+    const auto curMode = lumen::design::ThemeManager::instance().mode();
+    for (const auto &m : modes) {
+        auto *rb = new QRadioButton(Lang::tr(m.label));
+        rb->setFont(Theme::bodyFont(11));
+        rb->setChecked(curMode == m.mode);
+        modeGroup->addButton(rb);
+        modeRow->addWidget(rb);
+        connect(rb, &QRadioButton::toggled, dlg, [m](bool on) {
+            if (on) lumen::design::ThemeManager::instance().setMode(m.mode);
+        });
+    }
+    layout->addLayout(modeRow);
+
+    // Density axis
+    auto *densLabel = new QLabel(Lang::tr("Densidade"));
+    densLabel->setFont(Theme::bodyFont(12));
+    layout->addWidget(densLabel);
+    auto *densRow = new QHBoxLayout();
+    auto *densGroup = new QButtonGroup(dlg);
+    struct DensOpt { lumen::design::Density d; const char *label; };
+    const DensOpt dens[] = {
+        {lumen::design::Density::Comfortable, "Confortável"},
+        {lumen::design::Density::Compact, "Compacta"},
+    };
+    const auto curDens = lumen::design::ThemeManager::instance().density();
+    for (const auto &d : dens) {
+        auto *rb = new QRadioButton(Lang::tr(d.label));
+        rb->setFont(Theme::bodyFont(11));
+        rb->setChecked(curDens == d.d);
+        densGroup->addButton(rb);
+        densRow->addWidget(rb);
+        connect(rb, &QRadioButton::toggled, dlg, [d](bool on) {
+            if (on) lumen::design::ThemeManager::instance().setDensity(d.d);
+        });
+    }
+    layout->addLayout(densRow);
+
+    auto *reduce = new QCheckBox(Lang::tr("Reduzir movimento"));
+    reduce->setFont(Theme::bodyFont(11));
+    reduce->setChecked(lumen::design::ThemeManager::instance().reduceMotion());
+    connect(reduce, &QCheckBox::toggled, dlg, [](bool on) {
+        lumen::design::ThemeManager::instance().setReduceMotion(on);
+    });
+    layout->addWidget(reduce);
+
     dlg->exec();
 }

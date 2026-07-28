@@ -7,6 +7,7 @@
 #include <QFrame>
 #include "hoverplayfilter.h"
 #include "theme.h"
+#include "design/stylesheet.h"
 #include "coverwidget.h"
 #include "textutils.h"
 
@@ -23,10 +24,10 @@ SearchPage::SearchPage(TrackModel *model, QWidget *parent)
     auto *scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+    lumen::design::StyleSheet::apply(scroll, "QScrollArea { background: transparent; border: none; }");
 
     auto *content = new QWidget();
-    content->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(content, "background: transparent;");
     m_contentLayout = new QVBoxLayout(content);
     m_contentLayout->setContentsMargins(32, 28, 32, 28);
     m_contentLayout->setSpacing(12);
@@ -49,7 +50,7 @@ void SearchPage::refresh(int currentTrackId, bool /*isPlaying*/) {
     if (m_query.isEmpty()) {
         auto *hint = new QLabel(Lang::tr("Digite algo na busca para encontrar músicas e playlists"));
         hint->setFont(Theme::bodyFont(14));
-        hint->setStyleSheet(QString("color: %1; background: transparent; padding-top: 60px;").arg(Theme::textMuted().name()));
+        lumen::design::StyleSheet::apply(hint, QString("color: %1; background: transparent; padding-top: 60px;").arg(Theme::textMuted().name()));
         hint->setAlignment(Qt::AlignCenter);
         m_contentLayout->addWidget(hint);
         m_contentLayout->addStretch();
@@ -73,13 +74,13 @@ void SearchPage::refresh(int currentTrackId, bool /*isPlaying*/) {
 
     auto *title = new QLabel(QString(Lang::tr("Resultados para “%1”")).arg(m_query));
     title->setFont(Theme::titleFont(24));
-    title->setStyleSheet(QString("color: %1; background: transparent; padding-bottom: 8px;").arg(Theme::text().name()));
+    lumen::design::StyleSheet::apply(title, QString("color: %1; background: transparent; padding-bottom: 8px;").arg(Theme::text().name()));
     m_contentLayout->addWidget(title);
 
     if (folderHits.isEmpty() && trackHits.isEmpty()) {
         auto *empty = new QLabel(QString(Lang::tr("Nenhum resultado para “%1”\nVerifique a escrita ou tente outras palavras")).arg(m_query));
         empty->setFont(Theme::bodyFont(14));
-        empty->setStyleSheet(QString("color: %1; background: transparent; padding-top: 40px;").arg(Theme::textMuted().name()));
+        lumen::design::StyleSheet::apply(empty, QString("color: %1; background: transparent; padding-top: 40px;").arg(Theme::textMuted().name()));
         empty->setAlignment(Qt::AlignCenter);
         m_contentLayout->addWidget(empty);
         m_contentLayout->addStretch();
@@ -89,7 +90,7 @@ void SearchPage::refresh(int currentTrackId, bool /*isPlaying*/) {
     if (!folderHits.isEmpty()) {
         auto *playlistsLabel = new QLabel(Lang::tr("Playlists"));
         playlistsLabel->setFont(Theme::titleFont(18));
-        playlistsLabel->setStyleSheet(QString("color: %1; background: transparent; padding-top: 4px;").arg(Theme::text().name()));
+        lumen::design::StyleSheet::apply(playlistsLabel, QString("color: %1; background: transparent; padding-top: 4px;").arg(Theme::text().name()));
         m_contentLayout->addWidget(playlistsLabel);
 
         auto *grid = new QGridLayout();
@@ -104,7 +105,7 @@ void SearchPage::refresh(int currentTrackId, bool /*isPlaying*/) {
         grid->setColumnStretch(3, 1);
         auto *gridWidget = new QWidget();
         gridWidget->setLayout(grid);
-        gridWidget->setStyleSheet("background: transparent;");
+        lumen::design::StyleSheet::apply(gridWidget, "background: transparent;");
         m_contentLayout->addWidget(gridWidget);
         m_contentLayout->addSpacing(12);
     }
@@ -112,7 +113,7 @@ void SearchPage::refresh(int currentTrackId, bool /*isPlaying*/) {
     if (!trackHits.isEmpty()) {
         auto *tracksLabel = new QLabel(Lang::tr("Músicas"));
         tracksLabel->setFont(Theme::titleFont(18));
-        tracksLabel->setStyleSheet(QString("color: %1; background: transparent; padding-top: 4px;").arg(Theme::text().name()));
+        lumen::design::StyleSheet::apply(tracksLabel, QString("color: %1; background: transparent; padding-top: 4px;").arg(Theme::text().name()));
         m_contentLayout->addWidget(tracksLabel);
 
         for (int i = 0; i < trackHits.size(); ++i) {
@@ -127,7 +128,7 @@ QWidget *SearchPage::createPlaylistCard(const Folder &folder, int trackCount) {
     auto *chip = new QPushButton();
     chip->setFixedSize(220, 64);
     chip->setCursor(Qt::PointingHandCursor);
-    chip->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(chip, QString(
         "QPushButton { background: %1; border: none; border-radius: 8px; }"
         "QPushButton:hover { background: %2; }"
     ).arg(Theme::card().name(), Theme::cardHover().name()));
@@ -143,10 +144,10 @@ QWidget *SearchPage::createPlaylistCard(const Folder &folder, int trackCount) {
     infoLayout->setSpacing(1);
     auto *nameLabel = new QLabel(folder.name);
     nameLabel->setFont(Theme::bodyFont(13));
-    nameLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold;").arg(Theme::text().name()));
+    lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent; font-weight: bold;").arg(Theme::text().name()));
     auto *countLabel = new QLabel(QString(Lang::tr("%1 faixa%2")).arg(trackCount).arg(trackCount != 1 ? "s" : ""));
     countLabel->setFont(Theme::bodyFont(10));
-    countLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(countLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     infoLayout->addStretch();
     infoLayout->addWidget(nameLabel);
     infoLayout->addWidget(countLabel);
@@ -164,7 +165,7 @@ QWidget *SearchPage::createTrackRow(const Track &track, int index, int currentId
     row->setObjectName("trackRow");
     row->setFixedHeight(52);
     row->setCursor(Qt::PointingHandCursor);
-    row->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(row, QString(
         "QWidget#trackRow { background: %1; border-radius: 8px; border-left: 3px solid %2; }"
     ).arg(
         active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"),
@@ -180,7 +181,7 @@ QWidget *SearchPage::createTrackRow(const Track &track, int index, int currentId
     idx->setFont(Theme::monoFont(12));
     idx->setFixedWidth(28);
     idx->setAlignment(Qt::AlignCenter);
-    idx->setStyleSheet(QString("color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;").arg(
+    lumen::design::StyleSheet::apply(idx, QString("color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;").arg(
         active ? Theme::accent().name() : Theme::textMuted().name()));
     idx->setAttribute(Qt::WA_TransparentForMouseEvents);
     layout->addWidget(idx);
@@ -188,7 +189,7 @@ QWidget *SearchPage::createTrackRow(const Track &track, int index, int currentId
     auto *swatch = new QWidget();
     swatch->setFixedSize(38, 38);
     swatch->setAttribute(Qt::WA_TransparentForMouseEvents);
-    swatch->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1, stop:1 %2); border-radius: 6px;")
+    lumen::design::StyleSheet::apply(swatch, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1, stop:1 %2); border-radius: 6px;")
         .arg(track.cover.c1.name(), track.cover.c2.name()));
     layout->addWidget(swatch);
 
@@ -197,12 +198,12 @@ QWidget *SearchPage::createTrackRow(const Track &track, int index, int currentId
     auto *title = new QLabel(track.title);
     title->setFont(Theme::bodyFont(13));
     title->setAttribute(Qt::WA_TransparentForMouseEvents);
-    title->setStyleSheet(QString("color: %1; background: transparent; font-weight: 600;").arg(
+    lumen::design::StyleSheet::apply(title, QString("color: %1; background: transparent; font-weight: 600;").arg(
         active ? Theme::accent().name() : Theme::text().name()));
     auto *artist = new QLabel(track.artist);
     artist->setFont(Theme::bodyFont(11));
     artist->setAttribute(Qt::WA_TransparentForMouseEvents);
-    artist->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(artist, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     infoLayout->addWidget(title);
     infoLayout->addWidget(artist);
     layout->addLayout(infoLayout, 1);
@@ -211,7 +212,7 @@ QWidget *SearchPage::createTrackRow(const Track &track, int index, int currentId
         auto *tag = new QPushButton(track.folder);
         tag->setFont(Theme::bodyFont(10));
         tag->setCursor(Qt::PointingHandCursor);
-        tag->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(tag, QString(
             "QPushButton { color: %1; background: " + Theme::accentRgba(0.10) + "; border: none; border-radius: 10px; padding: 2px 8px; }"
             "QPushButton:hover { background: " + Theme::accentRgba(0.28) + "; color: %2; }"
         ).arg(Theme::accentDim().name(), Theme::text().name()));
@@ -224,7 +225,7 @@ QWidget *SearchPage::createTrackRow(const Track &track, int index, int currentId
     queueBtn->setFixedSize(28, 28);
     queueBtn->setCursor(Qt::PointingHandCursor);
     queueBtn->setToolTip(Lang::tr("Adicionar à fila"));
-    queueBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(queueBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; font-size: 13px; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::accent().name()));
@@ -235,7 +236,7 @@ QWidget *SearchPage::createTrackRow(const Track &track, int index, int currentId
     auto *likeBtn = new QPushButton(track.liked ? "" : "");
     likeBtn->setFixedSize(28, 28);
     likeBtn->setCursor(Qt::PointingHandCursor);
-    likeBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(likeBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; font-size: 14px; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { color: %2; }"
     ).arg(track.liked ? Theme::accent().name() : Theme::textMuted().name(), Theme::accent().name()));
@@ -247,13 +248,13 @@ QWidget *SearchPage::createTrackRow(const Track &track, int index, int currentId
     dur->setFont(Theme::monoFont(11));
     dur->setFixedWidth(40);
     dur->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    dur->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(dur, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     layout->addWidget(dur);
 
     Track t = track;
     auto *overlay = new QPushButton(row);
     overlay->setGeometry(0, 0, 9999, 52);
-    overlay->setStyleSheet("background: transparent; border: none;");
+    lumen::design::StyleSheet::apply(overlay, "background: transparent; border: none;");
     overlay->setCursor(Qt::PointingHandCursor);
     overlay->lower();
     connect(overlay, &QPushButton::clicked, [this, t]() { emit playRequested(t); });

@@ -1,3 +1,4 @@
+#include "design/stylesheet.h"
 #include "queuepage.h"
 #include "lang.h"
 #include "playerbar.h"
@@ -14,7 +15,7 @@ QueuePage::QueuePage(TrackModel *model, PlayerBar *player, QWidget *parent)
 {
     setObjectName("queuePanel");
     setAttribute(Qt::WA_StyledBackground, true);
-    setStyleSheet(QString("QWidget#queuePanel { background: %1; border-left: 1px solid %2; }")
+    lumen::design::StyleSheet::apply(this, QString("QWidget#queuePanel { background: %1; border-left: 1px solid %2; }")
         .arg(Theme::surface().name(), Theme::border().name()));
 
     auto *outerLayout = new QVBoxLayout(this);
@@ -23,14 +24,14 @@ QueuePage::QueuePage(TrackModel *model, PlayerBar *player, QWidget *parent)
 
     // Header: title + close button
     auto *header = new QWidget();
-    header->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(header, "background: transparent;");
     auto *headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(16, 14, 10, 6);
     headerLayout->setSpacing(8);
 
     auto *title = new QLabel(Lang::tr("Fila"));
     title->setFont(Theme::titleFont(15));
-    title->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
+    lumen::design::StyleSheet::apply(title, QString("color: %1; background: transparent;").arg(Theme::text().name()));
     headerLayout->addWidget(title);
     headerLayout->addStretch();
 
@@ -39,7 +40,7 @@ QueuePage::QueuePage(TrackModel *model, PlayerBar *player, QWidget *parent)
     closeBtn->setCursor(Qt::PointingHandCursor);
     closeBtn->setFont(Theme::iconFont(11));
     closeBtn->setToolTip(Lang::tr("Fechar"));
-    closeBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(closeBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 14px; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::text().name()));
@@ -51,10 +52,10 @@ QueuePage::QueuePage(TrackModel *model, PlayerBar *player, QWidget *parent)
     auto *scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+    lumen::design::StyleSheet::apply(scroll, "QScrollArea { background: transparent; border: none; }");
 
     auto *content = new QWidget();
-    content->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(content, "background: transparent;");
     m_contentLayout = new QVBoxLayout(content);
     m_contentLayout->setContentsMargins(10, 4, 10, 12);
     m_contentLayout->setSpacing(4);
@@ -78,7 +79,7 @@ void QueuePage::refresh(int currentTrackId, bool /*isPlaying*/) {
         auto *empty = new QLabel(Lang::tr("A fila está vazia\nReproduza uma música ou adicione faixas à fila"));
         empty->setFont(Theme::bodyFont(12));
         empty->setWordWrap(true);
-        empty->setStyleSheet(QString("color: %1; background: transparent; padding-top: 30px;").arg(Theme::textMuted().name()));
+        lumen::design::StyleSheet::apply(empty, QString("color: %1; background: transparent; padding-top: 30px;").arg(Theme::textMuted().name()));
         empty->setAlignment(Qt::AlignCenter);
         m_contentLayout->addWidget(empty);
         m_contentLayout->addStretch();
@@ -88,7 +89,7 @@ void QueuePage::refresh(int currentTrackId, bool /*isPlaying*/) {
     auto addSectionLabel = [this](const QString &text) {
         auto *label = new QLabel(text);
         label->setFont(Theme::bodyFont(10));
-        label->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px; padding: 8px 6px 2px;")
+        lumen::design::StyleSheet::apply(label, QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px; padding: 8px 6px 2px;")
             .arg(Theme::textMuted().name()));
         m_contentLayout->addWidget(label);
     };
@@ -122,7 +123,7 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
     row->setObjectName("trackRow");
     row->setFixedHeight(54);
     row->setCursor(Qt::PointingHandCursor);
-    row->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(row, QString(
         "QWidget#trackRow { background: %1; border-radius: 8px; }"
     ).arg(active ? Theme::accentRgba(0.12) : QStringLiteral("transparent")));
 
@@ -133,7 +134,7 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
     auto *swatch = new QWidget();
     swatch->setFixedSize(40, 40);
     swatch->setAttribute(Qt::WA_TransparentForMouseEvents);
-    swatch->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
+    lumen::design::StyleSheet::apply(swatch, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
         .arg(track.cover.c1.name(), track.cover.c2.name()));
     layout->addWidget(swatch);
 
@@ -142,12 +143,12 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
     auto *titleLabel = new QLabel(track.title);
     titleLabel->setFont(Theme::bodyFont(11));
     titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-    titleLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: 600;")
+    lumen::design::StyleSheet::apply(titleLabel, QString("color: %1; background: transparent; font-weight: 600;")
         .arg(active ? Theme::accent().name() : Theme::text().name()));
     auto *artistLabel = new QLabel(track.artist);
     artistLabel->setFont(Theme::bodyFont(10));
     artistLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-    artistLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(artistLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     infoCol->addWidget(titleLabel);
     infoCol->addWidget(artistLabel);
     layout->addLayout(infoCol, 1);
@@ -159,7 +160,7 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
         removeBtn->setCursor(Qt::PointingHandCursor);
         removeBtn->setFont(Theme::iconFont(10));
         removeBtn->setToolTip(Lang::tr("Remover da fila"));
-        removeBtn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(removeBtn, QString(
             "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %2; }"
         ).arg(Theme::textMuted().name(), Theme::danger().name()));
@@ -172,7 +173,7 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
         Track t = track;
         auto *overlay = new QPushButton(row);
         overlay->setGeometry(0, 0, 9999, 54);
-        overlay->setStyleSheet("background: transparent; border: none;");
+        lumen::design::StyleSheet::apply(overlay, "background: transparent; border: none;");
         overlay->setCursor(Qt::PointingHandCursor);
         overlay->lower();
         if (queueIndex >= 0)

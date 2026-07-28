@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QTimer>
 #include "theme.h"
+#include "design/stylesheet.h"
 #include "mediatools.h"
 
 static const QRegularExpression kSpotifyRe(
@@ -35,7 +36,7 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
     setWindowTitle(Lang::tr("Importar Playlist"));
     setFixedSize(560, 600);
     setAttribute(Qt::WA_DeleteOnClose);
-    setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(this, QString(
         "QDialog { background: %1; }"
         "QLabel { background: transparent; color: %2; }"
         "QLineEdit { background: %3; color: %2; border: 1px solid %4; border-radius: 8px; padding: 8px 12px; }"
@@ -57,12 +58,12 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
     m_statusLabel = new QLabel(Lang::tr("Buscando informações da playlist..."));
     m_statusLabel->setFont(Theme::bodyFont(11));
     m_statusLabel->setWordWrap(true);
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     layout->addWidget(m_statusLabel);
 
     auto *nameLabel = new QLabel(Lang::tr("Nome da playlist no Lumen Music"));
     nameLabel->setFont(Theme::bodyFont(11));
-    nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     layout->addWidget(nameLabel);
 
     m_nameEdit = new QLineEdit();
@@ -83,7 +84,7 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
     m_cancelBtn->setFont(Theme::bodyFont(12));
     m_cancelBtn->setFixedHeight(36);
     m_cancelBtn->setCursor(Qt::PointingHandCursor);
-    m_cancelBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_cancelBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; padding: 0 16px; }"
         "QPushButton:hover { background: rgba(255,255,255,0.05); }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
@@ -95,7 +96,7 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
     m_startBtn->setFixedHeight(36);
     m_startBtn->setCursor(Qt::PointingHandCursor);
     m_startBtn->setEnabled(false);
-    m_startBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_startBtn, QString(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 18px; padding: 0 20px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
         "QPushButton:disabled { background: %4; color: %5; }"
@@ -291,7 +292,7 @@ void ImportPlaylistDialog::onMetadataReady() {
 }
 
 void ImportPlaylistDialog::showError(const QString &message) {
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::danger().name()));
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(Theme::danger().name()));
     m_statusLabel->setText(message);
 }
 
@@ -367,7 +368,7 @@ void ImportPlaylistDialog::findNextMatch() {
         return;
     }
 
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     m_statusLabel->setText(QString(Lang::tr("Buscando correspondências no YouTube... (%1 de %2)"))
         .arg(m_matchIndex + 1).arg(m_items.size()));
     if (auto *li = m_listWidget->item(m_matchIndex)) m_listWidget->scrollToItem(li);
@@ -421,7 +422,7 @@ void ImportPlaylistDialog::onMatchingDone() {
     for (const auto &item : m_items)
         if (!item.matchUrl.isEmpty() && !item.confident) ++needReview;
 
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(
         needReview > 0 ? Theme::danger().name() : Theme::textSoft().name()));
     m_statusLabel->setText(needReview > 0
         ? QString(Lang::tr("Revise a lista: %1 música%2 em laranja podem estar erradas. Marque para aprovar e desmarque para reprovar."))
@@ -514,7 +515,7 @@ void ImportPlaylistDialog::downloadNext() {
 
     const int index = m_downloadQueue[m_queuePos];
     const ImportItem &item = m_items[index];
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     m_statusLabel->setText(QString(Lang::tr("Baixando %1 de %2: %3"))
         .arg(m_queuePos + 1).arg(m_downloadQueue.size()).arg(item.title));
 
@@ -581,7 +582,7 @@ void ImportPlaylistDialog::finishImport() {
     if (!m_importedIds.isEmpty())
         m_model->reorderPlaylist(m_playlistName, m_importedIds);
 
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(
         m_okCount > 0 ? Theme::accent().name() : Theme::danger().name()));
     m_statusLabel->setText(QString(Lang::tr("Concluído! %1 de %2 música%3 importada%3 para \"%4\"."))
         .arg(m_okCount).arg(m_downloadQueue.size())
