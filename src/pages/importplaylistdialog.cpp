@@ -1,5 +1,6 @@
 #include "importplaylistdialog.h"
 #include "database.h"
+#include "tools/ytdlp_bootstrap.h"
 #include "lang.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -225,9 +226,12 @@ void ImportPlaylistDialog::parseSpotifyEmbed(const QByteArray &html) {
 }
 
 void ImportPlaylistDialog::fetchYouTubePlaylist() {
-    const QString ytDlp = MediaTools::findYtDlp();
+    QString ytErr;
+    const QString ytDlp = lumen::tools::ensureYtDlp(&ytErr);
     if (ytDlp.isEmpty()) {
-        showError(Lang::tr("yt-dlp não encontrado. Verifique sua pasta de instalação."));
+        showError(ytErr.isEmpty()
+            ? Lang::tr("yt-dlp não encontrado. Verifique sua pasta de instalação.")
+            : ytErr);
         return;
     }
 
@@ -413,7 +417,7 @@ void ImportPlaylistDialog::findNextMatch() {
         findNextMatch();
     });
 
-    m_proc->start(MediaTools::findYtDlp(), {"-J", "--flat-playlist", query});
+    m_proc->start(lumen::tools::ensureYtDlp(), {"-J", "--flat-playlist", query});
 }
 
 void ImportPlaylistDialog::onMatchingDone() {
@@ -471,7 +475,7 @@ void ImportPlaylistDialog::startDownloads() {
     if (name.isEmpty()) return;
     m_playlistName = name;
 
-    if (MediaTools::findYtDlp().isEmpty()) {
+    if (lumen::tools::ensureYtDlp().isEmpty()) {
         showError(Lang::tr("yt-dlp não encontrado. Verifique sua pasta de instalação."));
         return;
     }
@@ -571,7 +575,7 @@ void ImportPlaylistDialog::downloadNext() {
         downloadNext();
     });
 
-    m_proc->start(MediaTools::findYtDlp(),
+    m_proc->start(lumen::tools::ensureYtDlp(),
                   MediaTools::downloadArgs(item.matchUrl, outTemplate));
 }
 

@@ -67,6 +67,7 @@ set(PROJECT_SOURCES
     src/models/trackcontextmenu.cpp
     src/platform/mediakeys.cpp
     src/platform/trayicon.cpp
+    src/tools/ytdlp_bootstrap.cpp
     src/widgets/vinylwidget.cpp
     src/widgets/clickableslider.cpp
 )
@@ -101,6 +102,8 @@ set(PROJECT_HEADERS
     src/platform/nowplaying.h
     src/platform/mediakeys.h
     src/platform/trayicon.h
+    src/tools/ytdlp_bootstrap.h
+    src/database/position_gap.h
     src/widgets/vinylwidget.h
     src/widgets/clickableslider.h
     src/widgets/theme.h
@@ -125,6 +128,7 @@ target_include_directories(LumenMusic PRIVATE
     src/design
     src/models
     src/platform
+    src/tools
 )
 
 target_link_libraries(LumenMusic PRIVATE
@@ -181,20 +185,12 @@ if(WIN32)
     )
 endif()
 
-# --- Bundle the yt-dlp helper next to the executable ------------------------
-# qmake copied src/thirdparty/yt-dlp.exe into the build dir; do the same so the
-# app can locate it at runtime. (P8.4 will replace this with first-run download.)
-set(YTDLP_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/thirdparty/yt-dlp.exe")
-if(EXISTS "${YTDLP_SRC}")
-    add_custom_command(TARGET LumenMusic POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${YTDLP_SRC}" "$<TARGET_FILE_DIR:LumenMusic>/yt-dlp.exe"
-        COMMENT "Copying yt-dlp.exe next to LumenMusic")
-endif()
+# yt-dlp is NO LONGER bundled (P8.4). First-run download lives in
+# src/tools/ytdlp_bootstrap.cpp → %LOCALAPPDATA%/…/tools/yt-dlp.exe
 
 # --- Install + self-contained deployment ------------------------------------
 # Flat layout for the Inno Setup tree (installer/lumen-music.iss):
-#   dist/LumenMusic/LumenMusic.exe + Qt DLLs + plugins/ + yt-dlp.exe
+#   dist/LumenMusic/LumenMusic.exe + Qt DLLs + plugins/
 #
 # Config-aware windeployqt: never hardcode --release (a Debug install would
 # otherwise ship the wrong Qt DLLs — Task.md P7). Paths are resolved to
@@ -204,10 +200,6 @@ set(CMAKE_INSTALL_BINDIR ".")
 install(TARGETS LumenMusic
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     BUNDLE  DESTINATION ${CMAKE_INSTALL_BINDIR})
-
-if(EXISTS "${YTDLP_SRC}")
-    install(FILES "${YTDLP_SRC}" DESTINATION ${CMAKE_INSTALL_BINDIR})
-endif()
 
 if(WIN32)
     # MSVC: ship the VC++ redistributable DLLs (--compiler-runtime is MinGW-only).
@@ -286,3 +278,62 @@ if(MSVC)
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF")
 endif()
 include(CPack)
+
+# --- Tests (P8.5) ------------------------------------------------------------
+option(LUMEN_BUILD_TESTS "Build QTest unit tests" ON)
+if(LUMEN_BUILD_TESTS)
+    enable_testing()
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+
+    # ctest runs test exes without the developer shell PATH — prepend Qt bin so
+    # Qt6*.dll (and platforms/) resolve. 0xc0000135 without this on MSVC.
+    get_filename_component(_lumen_qt_bin "${Qt6_DIR}/../../../bin" ABSOLUTE)
+    if(WIN32)
+        set(_lumen_test_path "${_lumen_qt_bin};$ENV{PATH}")
+        # Escape semicolons for CMake list→string ENVIRONMENT property.
+        string(REPLACE ";" "\\;" _lumen_test_path_esc "${_lumen_test_path}")
+    else()
+        set(_lumen_test_path_esc "PATH=${_lumen_qt_bin}:$ENV{PATH}")
+    endif()
+
+    function(lumen_add_test name)
+        add_executable(${name} ${ARGN})
+        target_include_directories(${name} PRIVATE
+            src src/database src/design src/models src/widgets src/player src/tools)
+        target_link_libraries(${name} PRIVATE
+            Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Test)
+        if(MSVC)
+            target_compile_options(${name} PRIVATE /utf-8)
+        endif()
+        add_test(NAME ${name} COMMAND ${name})
+        if(WIN32)
+            set_tests_properties(${name} PROPERTIES
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                ENVIRONMENT "PATH=${_lumen_test_path_esc}")
+        else()
+            set_tests_properties(${name} PROPERTIES
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                ENVIRONMENT "${_lumen_test_path_esc}")
+        endif()
+    endfunction()
+
+    lumen_add_test(test_textutils
+        tests/test_textutils.cpp)
+
+    lumen_add_test(test_position_gap
+        tests/test_position_gap.cpp)
+
+    lumen_add_test(test_trackrow_hittest
+        tests/test_trackrow_hittest.cpp
+        src/models/trackrowdelegate.cpp
+        src/design/paint.cpp
+        src/design/tokens.cpp
+        src/design/palettes.cpp
+        src/design/thememanager.cpp
+        src/design/stylesheet.cpp)
+    target_link_libraries(test_trackrow_hittest PRIVATE Qt6::Network)
+
+    lumen_add_test(test_migrator
+        tests/test_migrator.cpp
+        src/database/migrator.cpp)
+endif()

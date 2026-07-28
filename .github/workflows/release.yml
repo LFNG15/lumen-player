@@ -1,0 +1,146 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    name: Build + publish Windows artifacts
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Version guard (tag must match PROJECT_VERSION)
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)(?:-.*)?$') {
+            throw "Tag '$tag' does not look like vX.Y.Z"
+          }
+          $tagVer = $Matches[1]
+          $cmake = Get-Content CMakeLists.txt -Raw
+          if ($cmake -notmatch 'project\s*\(\s*LumenMusic\s+VERSION\s+(\d+\.\d+\.\d+)') {
+            throw "Could not parse PROJECT_VERSION from CMakeLists.txt"
+          }
+          $projVer = $Matches[1]
+          Write-Host "tag core version=$tagVer  PROJECT_VERSION=$projVer"
+          if ($tagVer -ne $projVer) {
+            throw "Version guard failed: tag v$tagVer != PROJECT_VERSION $projVer"
+          }
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtmultimedia
+          cache: true
+
+      - name: Configure + build
+        shell: pwsh
+        run: |
+          if ($env:QT_ROOT_DIR) { $env:QTDIR = $env:QT_ROOT_DIR }
+          cmake --preset msvc-ninja -DLUMEN_BUILD_TESTS=ON
+          cmake --build --preset msvc-ninja
+          ctest --test-dir build/msvc-ninja --output-on-failure
+
+      - name: Install flat tree
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $pwd "dist/LumenMusic"
+          if (Test-Path $prefix) { Remove-Item $prefix -Recurse -Force }
+          cmake --install build/msvc-ninja --prefix $prefix
+
+      - name: Smoke — i18n canary on installed tree
+        shell: pwsh
+        run: |
+          $exe = "dist/LumenMusic/LumenMusic.exe"
+          & $exe --i18n-canary
+          if ($LASTEXITCODE -ne 0) { throw "i18n canary failed on installed tree" }
+
+      # Optional: --selftest when a short fixture is present in the repo.
+      # - name: Smoke — selftest
+      #   run: dist/LumenMusic/LumenMusic.exe --selftest path\to\fixture.opus
+
+      - name: ZIP via CPack
+        working-directory: build/msvc-ninja
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ../../dist | Out-Null
+          cpack -G ZIP
+          $zips = Get-ChildItem -Filter "LumenMusic-*.zip" -Recurse -ErrorAction SilentlyContinue
+          if (-not $zips) { throw "CPack produced no LumenMusic-*.zip" }
+          $zips | Copy-Item -Destination ../../dist/ -Force
+          Get-ChildItem ../../dist -Filter "LumenMusic-*.zip"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" }
+          & $iscc installer\lumen-music.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      # Code signing reserved for a future certificate (Task.md P8.7).
+      # - name: Sign installer (disabled)
+      #   if: false
+      #   run: echo "signtool sign /fd SHA256 ..."
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path CMakeLists.txt -Pattern 'VERSION\s+(\d+\.\d+\.\d+)' |
+            Select-Object -First 1).Matches.Groups[1].Value
+          Get-FileHash "dist/LumenMusic-v$ver-win64.zip" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  LumenMusic-v$ver-win64.zip" } |
+            Set-Content "dist/SHA256SUMS.txt"
+          $setup = Get-ChildItem dist -Filter "LumenMusic-v*-setup.exe" | Select-Object -First 1
+          if ($setup) {
+            Get-FileHash $setup.FullName -Algorithm SHA256 |
+              ForEach-Object { "$($_.Hash.ToLower())  $($setup.Name)" } |
+              Add-Content "dist/SHA256SUMS.txt"
+          }
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path CMakeLists.txt -Pattern 'VERSION\s+(\d+\.\d+\.\d+)' |
+            Select-Object -First 1).Matches.Groups[1].Value
+          $cl = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?s)## \[$([regex]::Escape($ver))\][^\n]*\n(.*?)(?=\n## |\z)"
+          $m = [regex]::Match($cl, $pattern)
+          $body = if ($m.Success) { $m.Groups[1].Value.Trim() } else { "Release $ver" }
+          $path = "dist/RELEASE_NOTES.md"
+          Set-Content -Path $path -Value $body -Encoding utf8
+          echo "path=$path" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/LumenMusic-*.zip
+            dist/LumenMusic-*-setup.exe
+            dist/SHA256SUMS.txt
+          body_path: ${{ steps.notes.outputs.path }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

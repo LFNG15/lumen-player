@@ -1,6 +1,7 @@
 #include "design/stylesheet.h"
 #include "addmusicpage.h"
 #include "database.h"
+#include "tools/ytdlp_bootstrap.h"
 #include "lang.h"
 #include <QLabel>
 #include <QFileDialog>
@@ -659,7 +660,10 @@ void AddMusicPage::startDownload() {
     });
 
 
-    const QString ytDlp = MediaTools::findYtDlp();
+    QString ytErr;
+    const QString ytDlp = lumen::tools::ensureYtDlp(&ytErr);
+    if (ytDlp.isEmpty() && !ytErr.isEmpty())
+        qWarning() << "yt-dlp bootstrap:" << ytErr;
     if (ytDlp.isEmpty()) {
         m_downloadProcess->deleteLater();
         m_downloadProcess = nullptr;

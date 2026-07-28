@@ -4,12 +4,13 @@
 
 **A lightweight, elegant desktop music player built in C++ with Qt.**
 
-Local library, playlists with cover art, playback queue, listening history, and customizable themes.
+Local library · playlists · queue · listening history · live themes · Windows SMTC
 
-![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)
-![Qt](https://img.shields.io/badge/Qt-6.11-41CD52?logo=qt&logoColor=white)
+[![CI](https://github.com/Lumen-Connection/lumen-music/actions/workflows/ci.yml/badge.svg)](https://github.com/Lumen-Connection/lumen-music/actions/workflows/ci.yml)
+![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
+![Qt](https://img.shields.io/badge/Qt-6.x%20MSVC-41CD52?logo=qt&logoColor=white)
 ![Platform](https://img.shields.io/badge/Windows-x64-0078D6?logo=windows&logoColor=white)
-![SQLite](https://img.shields.io/badge/SQLite-local-003B57?logo=sqlite&logoColor=white)
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 </div>
 
@@ -18,116 +19,116 @@ Local library, playlists with cover art, playback queue, listening history, and 
 ## About
 
 **Lumen Music** is a local audio player focused on a clean, fluid experience.
-You import your files, organize them into playlists, like tracks, and control
-everything through a dark, minimalist interface. No cloud, no accounts —
-everything is stored locally.
+Import files (or fetch audio via yt-dlp), organize playlists, like tracks, and
+control everything through a themed interface. No cloud, no accounts —
+everything stays on your machine.
 
-## Features
+Part of the [Lumen Connection](https://lumenconnection.com.br) family.
+
+## Features (v2.0)
 
 ### Library and organization
-- **Import music** from local audio files
-- **Playlists** — create, rename, and delete
-- **Playlist cover** with a color gradient **or an image** (with lightbox zoom)
-- **Reorder tracks** within a playlist via **drag and drop** (order is persisted)
-- **Liked songs** as their own collection, with a play button
-- **Edit** track title and artist, and **delete** tracks
-- Clicking a playlist tag jumps straight to it
+- Import local audio; download from YouTube (yt-dlp on first use)
+- Playlists with cover gradient or image; reorder via drag-and-drop (order persists)
+- N:N membership — a track can live in multiple playlists without duplicating files
+- Liked songs collection; edit title/artist; multi-select + context menu
+- Import Spotify / YouTube playlists (heuristic match)
 
 ### Playback
-- **Full player**: play/pause, previous/next, shuffle, repeat, volume, and mute
-- **Spotify-style queue**: add to queue, view, and remove; queued tracks play
-  before the current context resumes
-- **Context-aware playback** — each playlist, the liked collection, and the
-  library play within themselves (next/previous respects where you started)
-- **Recently played** — history based on what was actually played
+- Full player: play/pause, prev/next, shuffle bag, repeat off/all/one, volume/mute
+- Spotify-style queue; context-aware next/prev per playlist / liked / library
+- Restores track, position, queue, and shuffle after restart
+- Windows **SMTC** (media keys, Bluetooth headphones, system flyout)
 
 ### Look and feel
-- **Themes**: Lumen (default), Hot Vinyl, Ocean, Forest, Night Purple, and Modern Gray
-- Dark, minimalist, and responsive interface
+- **6 palettes** × dark / light / high-contrast × comfortable / compact
+- Live theme and language switch (PT/EN) without restart
+- Optional reduce-motion for animations
 
 ## Tech stack
 
-- **Language:** C++17
-- **Framework:** Qt 6 (Widgets, Multimedia, SQL)
-- **Build:** CMake + Ninja + MinGW
-- **Storage:** SQLite (local database)
+| | |
+|---|---|
+| Language | C++20 |
+| UI | Qt 6 Widgets (Multimedia, SQL, Network) |
+| Build | **CMake + Ninja + MSVC 2022** |
+| Storage | SQLite (WAL, versioned migrations) |
 
-## Building the project
+> MinGW is **not** supported for v2.x (SMTC needs MSVC + C++/WinRT).
+
+## Building
+
+Follow **[CONTRIBUTING.md](CONTRIBUTING.md)** for the supported setup. Short version:
 
 ### Prerequisites
-- [Qt 6.11](https://www.qt.io/download) with the **MinGW 64-bit** kit and the
-  **Multimedia** and **SQL** modules
+- MSVC 2022 (Build Tools or VS) — x64
+- CMake ≥ 3.21, Ninja
+- Qt 6.10+ **`msvc2022_64`** with **Multimedia** (FFmpeg), **Sql**, **Network**
+- Windows SDK with C++/WinRT (for SMTC; or build with `-DLUMEN_WITH_SMTC=OFF`)
 
-### Option A — Qt Creator (easiest)
-1. Open `CMakeLists.txt` in Qt Creator
-2. Select the **Desktop Qt 6.x MinGW 64-bit** kit
-3. Click **Run**
-
-### Option B — Command line (PowerShell)
-The project uses **CMake** with **presets** (`CMakePresets.json`). Adjust the
-Qt/MinGW paths inside the presets to match your installation if they differ.
+### Configure and build
 
 ```powershell
-# Put Qt's CMake/Ninja/MinGW on the PATH (adjust for your version):
-$env:Path = "D:\Qt\Tools\CMake_64\bin;D:\Qt\Tools\Ninja;D:\Qt\Tools\mingw1310_64\bin;D:\Qt\6.11.0\mingw_64\bin;" + $env:Path
+# From "x64 Native Tools Command Prompt for VS 2022" (or after vcvars64.bat)
+$env:QTDIR = "C:/Qt/6.11.0/msvc2022_64"   # adjust to your install
 
-cmake --preset release          # configure
-cmake --build --preset release  # build
+cmake --preset msvc-ninja
+cmake --build --preset msvc-ninja
+ctest --test-dir build/msvc-ninja --output-on-failure
+.\build\msvc-ninja\LumenMusic.exe
 ```
 
-> **Paths with accents/spaces:** the MinGW tools (moc/windres) don't handle
-> build directories containing non-ASCII characters well (e.g. "Área de
-> Trabalho", the Portuguese name for Desktop). That's why the presets put the
-> build under `%LOCALAPPDATA%\LumenMusic-build\<preset>` (an ASCII path) rather
-> than inside the repository. The `LumenMusic.exe` binary lands there.
+Optional local preset: copy `CMakeUserPresets.json.example` → `CMakeUserPresets.json`
+and set `QTDIR`.
 
-To build without presets, point the build directory at a path without accents:
+### Useful CLI flags
+
+| Flag | Purpose |
+|------|---------|
+| `--i18n-canary` | Exit 0 if English i18n works (guards MSVC `/utf-8`) |
+| `--selftest path\to\file.opus` | Exit 0 if media loads (deploy smoke) |
+| `--seed-fake-library N` | Insert N synthetic tracks for perf testing |
+
+## Packaging
 
 ```powershell
-cmake -S . -B "$env:LOCALAPPDATA\LumenMusic-build\release" -G Ninja `
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="D:/Qt/6.11.0/mingw_64"
-cmake --build "$env:LOCALAPPDATA\LumenMusic-build\release"
+# Self-contained folder (windeployqt + plugin gates)
+cmake --install build/msvc-ninja --prefix dist\LumenMusic
+
+# ZIP (CPack)
+cpack --config build\msvc-ninja\CPackConfig.cmake -G ZIP -B dist
+
+# Installer (Inno Setup) — expects dist\LumenMusic\
+iscc installer\lumen-music.iss
 ```
 
-## Building a distributable package
+`yt-dlp` is **not** bundled. On first YouTube import the app downloads a pinned
+release into `%LOCALAPPDATA%\VinilPlayer\Vinil Player\tools\` with checksum
+verification when available.
 
-Packaging is automatic: CMake's `install` step invokes `windeployqt`, so a
-`cmake --install` or a `cpack` produces a folder/zip that runs on a PC
-**without Qt installed**.
+Tagged releases (`v*`) publish ZIP + setup + SHA-256 via GitHub Actions
+(see `.github/workflows/release.yml`).
 
-### Self-contained folder (`cmake --install`)
+## Documentation
 
-```powershell
-$build = "$env:LOCALAPPDATA\LumenMusic-build\release"
-cmake --install $build --prefix dist\LumenMusic
-```
+| Doc | Content |
+|-----|---------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Build, tests, commit/branch conventions |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Source map and data flow |
+| [CHANGELOG.md](CHANGELOG.md) | Keep a Changelog |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
 
-Produces `dist\LumenMusic\` with `LumenMusic.exe`, `yt-dlp.exe`, the Qt DLLs,
-and the plugins. Test it by running `dist\LumenMusic\LumenMusic.exe` and playing
-a track (this exercises the multimedia plugins and the SQLite driver).
+## Roadmap (v2.1+)
 
-### Release ZIP (`cpack`)
-
-```powershell
-$build = "$env:LOCALAPPDATA\LumenMusic-build\release"
-cpack --config "$build\CPackConfig.cmake" -G ZIP -B dist
-```
-
-Produces `dist\LumenMusic-v<version>-win64.zip`. The version comes from a single
-source of truth — `project(... VERSION ...)` in `CMakeLists.txt` — which is also
-embedded into the `.exe` (VERSIONINFO) and read automatically by the Inno Setup
-installer.
-
-### Installer (Inno Setup, optional)
-
-With the `dist\LumenMusic` folder ready, compile `installer\lumen-music.iss` with
-`ISCC.exe`. The version is read straight from the `.exe`, so there's no version
-number to maintain by hand.
+- TagLib / embedded cover art
+- Album and Artist pages
+- Optional local discovery shelves
 
 ## License
 
-Built by [Lumen Connection](https://lumenconnection.com.br), distributed under the
-[AGPL-3.0](LICENSE) license.
+Built by [Lumen Connection](https://lumenconnection.com.br), distributed under
+the [AGPL-3.0](LICENSE) license.
 
 ---
 

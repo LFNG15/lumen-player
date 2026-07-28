@@ -351,6 +351,8 @@ bool Migrator::migrateTo2(QSqlDatabase &db)
         }
 
         // Map: folder_id 0 → NULL owner.
+        // COALESCE: legacy rows often have NULL cover/artist; DEFAULT only applies
+        // when a column is omitted from INSERT, not when SELECT yields NULL.
         if (!execSql(db, QStringLiteral(
                 "INSERT INTO tracks_v2 ("
                 "  id, title, artist, file_path, owner_playlist_id, duration_ms,"
@@ -358,11 +360,20 @@ bool Migrator::migrateTo2(QSqlDatabase &db)
                 "  play_count, last_played_at, missing"
                 ") "
                 "SELECT "
-                "  id, title, artist, file_path,"
+                "  id,"
+                "  COALESCE(title, ''),"
+                "  COALESCE(NULLIF(artist, ''), 'Desconhecido'),"
+                "  file_path,"
                 "  CASE WHEN folder_id IS NULL OR folder_id = 0 THEN NULL ELSE folder_id END,"
-                "  duration_ms, cover_color1, cover_color2, liked,"
-                "  CASE WHEN liked = 1 THEN added_at ELSE 0 END,"
-                "  added_at, play_count, last_played_at, 0 "
+                "  COALESCE(duration_ms, 0),"
+                "  COALESCE(NULLIF(cover_color1, ''), '#e8a44a'),"
+                "  COALESCE(NULLIF(cover_color2, ''), '#d45d5d'),"
+                "  COALESCE(liked, 0),"
+                "  CASE WHEN COALESCE(liked, 0) = 1 THEN COALESCE(added_at, 0) ELSE 0 END,"
+                "  COALESCE(added_at, 0),"
+                "  COALESCE(play_count, 0),"
+                "  COALESCE(last_played_at, 0),"
+                "  0 "
                 "FROM tracks"))) {
             return false;
         }
