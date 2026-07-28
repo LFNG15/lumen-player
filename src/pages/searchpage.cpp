@@ -1,264 +1,212 @@
 #include "searchpage.h"
 #include "lang.h"
+#include "theme.h"
+#include "textutils.h"
+#include "design/stylesheet.h"
+#include "models/tracklistmodel.h"
+#include "models/trackfilterproxy.h"
+#include "models/trackrowdelegate.h"
+#include "models/trackcontextmenu.h"
+
 #include <QLabel>
 #include <QPushButton>
-#include <QGridLayout>
+#include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFrame>
-#include "hoverplayfilter.h"
-#include "theme.h"
-#include "design/stylesheet.h"
-#include "coverwidget.h"
-#include "textutils.h"
-
-static bool matches(const QString &haystack, const QString &needle) {
-    return TextUtils::normalized(haystack).contains(needle);
-}
+#include <QListView>
+#include <QTimer>
+#include <QCursor>
 
 SearchPage::SearchPage(TrackModel *model, QWidget *parent)
-    : QWidget(parent), m_model(model)
+    : QWidget(parent)
+    , m_model(model)
 {
-    auto *outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(0, 0, 0, 0);
+    auto *root = new QVBoxLayout(this);
+    root->setContentsMargins(32, 28, 32, 28);
+    root->setSpacing(12);
 
-    auto *scroll = new QScrollArea(this);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    lumen::design::StyleSheet::apply(scroll, "QScrollArea { background: transparent; border: none; }");
+    m_title = new QLabel(this);
+    m_title->setFont(Theme::titleFont(24));
+    lumen::design::StyleSheet::apply(m_title, QString(
+        "color: %1; background: transparent;").arg(Theme::text().name()));
+    root->addWidget(m_title);
 
-    auto *content = new QWidget();
-    lumen::design::StyleSheet::apply(content, "background: transparent;");
-    m_contentLayout = new QVBoxLayout(content);
-    m_contentLayout->setContentsMargins(32, 28, 32, 28);
-    m_contentLayout->setSpacing(12);
+    m_empty = new QLabel(this);
+    m_empty->setFont(Theme::bodyFont(14));
+    m_empty->setAlignment(Qt::AlignCenter);
+    m_empty->setWordWrap(true);
+    lumen::design::StyleSheet::apply(m_empty, QString(
+        "color: %1; background: transparent; padding-top: 40px;"
+    ).arg(Theme::textMuted().name()));
+    root->addWidget(m_empty);
 
-    scroll->setWidget(content);
-    outerLayout->addWidget(scroll);
+    m_playlistHits = new QWidget(this);
+    lumen::design::StyleSheet::apply(m_playlistHits, QStringLiteral("background: transparent;"));
+    new QVBoxLayout(m_playlistHits); // filled in applyQuery
+    root->addWidget(m_playlistHits);
+
+    m_listModel = new TrackListModel(m_model, this);
+    TrackListModel::Source src;
+    src.kind = TrackListModel::Source::All;
+    m_listModel->setSource(src);
+
+    m_proxy = new TrackFilterProxy(this);
+    m_proxy->setSourceModel(m_listModel);
+
+    m_view = new QListView(this);
+    m_view->setModel(m_proxy);
+    m_view->setUniformItemSizes(true);
+    m_view->setLayoutMode(QListView::Batched);
+    m_view->setResizeMode(QListView::Adjust);
+    m_view->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_view->setMouseTracking(true);
+    m_view->setFrameShape(QFrame::NoFrame);
+    m_view->setSpacing(2);
+    m_view->setContextMenuPolicy(Qt::CustomContextMenu);
+    lumen::design::StyleSheet::apply(m_view, QStringLiteral(
+        "QListView { background: transparent; border: none; outline: none; }"));
+
+    m_delegate = new TrackRowDelegate(m_view);
+    m_view->setItemDelegate(m_delegate);
+    m_ctx = new TrackContextMenu(m_model, this);
+
+    connect(m_delegate, &TrackRowDelegate::playClicked, this, [this](const QModelIndex &px) {
+        const QModelIndex src = m_proxy->mapToSource(px);
+        const int id = m_listModel->trackIdAt(src.row());
+        if (Track *t = m_model->findTrack(id)) emit playRequested(*t);
+    });
+    connect(m_delegate, &TrackRowDelegate::likeClicked, this, [this](const QModelIndex &px) {
+        const QModelIndex src = m_proxy->mapToSource(px);
+        const int id = m_listModel->trackIdAt(src.row());
+        if (id > 0) emit likeToggled(id);
+    });
+    connect(m_delegate, &TrackRowDelegate::moreClicked, this,
+            [this](const QModelIndex &, const QPoint &gp) { showContext(gp); });
+    connect(m_view, &QListView::customContextMenuRequested, this, [this](const QPoint &pos) {
+        showContext(m_view->viewport()->mapToGlobal(pos));
+    });
+
+    connect(m_ctx, &TrackContextMenu::playRequested, this, &SearchPage::playRequested);
+    connect(m_ctx, &TrackContextMenu::enqueueRequested, this, &SearchPage::enqueueRequested);
+    connect(m_ctx, &TrackContextMenu::likeToggled, this, &SearchPage::likeToggled);
+
+    root->addWidget(m_view, 1);
+
+    // Debounce 200 ms — Task.md §3.5.
+    m_debounce = new QTimer(this);
+    m_debounce->setSingleShot(true);
+    m_debounce->setInterval(200);
+    connect(m_debounce, &QTimer::timeout, this, &SearchPage::applyQuery);
+
+    applyQuery();
 }
 
-void SearchPage::setQuery(const QString &query) {
+void SearchPage::setQuery(const QString &query)
+{
     m_query = query.trimmed();
+    m_debounce->start();
 }
 
-void SearchPage::refresh(int currentTrackId, bool /*isPlaying*/) {
-    QLayoutItem *item;
-    while ((item = m_contentLayout->takeAt(0)) != nullptr) {
-        if (item->widget()) item->widget()->deleteLater();
-        delete item;
+void SearchPage::refresh(int currentTrackId, bool isPlaying)
+{
+    m_currentId = currentTrackId;
+    m_playing = isPlaying;
+    m_listModel->setPlaybackState(currentTrackId, isPlaying);
+    // Keep current filter; only refresh data.
+    m_listModel->reload();
+    m_proxy->setNeedle(TextUtils::normalized(m_query));
+}
+
+QList<int> SearchPage::selectedIds() const
+{
+    QList<int> ids;
+    for (const QModelIndex &px : m_view->selectionModel()->selectedRows()) {
+        const QModelIndex src = m_proxy->mapToSource(px);
+        const int id = m_listModel->trackIdAt(src.row());
+        if (id > 0) ids.append(id);
+    }
+    return ids;
+}
+
+void SearchPage::showContext(const QPoint &globalPos)
+{
+    auto ids = selectedIds();
+    if (!ids.isEmpty())
+        m_ctx->popup(ids, globalPos);
+}
+
+void SearchPage::applyQuery()
+{
+    const QString needle = TextUtils::normalized(m_query);
+
+    // Clear playlist chips.
+    if (QLayout *lay = m_playlistHits->layout()) {
+        QLayoutItem *it;
+        while ((it = lay->takeAt(0)) != nullptr) {
+            if (it->widget()) it->widget()->deleteLater();
+            delete it;
+        }
     }
 
     if (m_query.isEmpty()) {
-        auto *hint = new QLabel(Lang::tr("Digite algo na busca para encontrar músicas e playlists"));
-        hint->setFont(Theme::bodyFont(14));
-        lumen::design::StyleSheet::apply(hint, QString("color: %1; background: transparent; padding-top: 60px;").arg(Theme::textMuted().name()));
-        hint->setAlignment(Qt::AlignCenter);
-        m_contentLayout->addWidget(hint);
-        m_contentLayout->addStretch();
+        m_title->setText(QString());
+        m_empty->setText(Lang::tr("Digite algo na busca para encontrar músicas e playlists"));
+        m_empty->show();
+        m_playlistHits->hide();
+        m_view->hide();
+        m_proxy->setNeedle(QString());
         return;
     }
 
-    const QString needle = TextUtils::normalized(m_query);
+    m_title->setText(QString(Lang::tr("Resultados para “%1”")).arg(m_query));
+    m_proxy->setNeedle(needle);
+    m_listModel->setPlaybackState(m_currentId, m_playing);
 
-    // Matching playlists (by name)
+    // Playlist name hits as simple chips.
     QList<Folder> folderHits;
     for (const auto &f : m_model->folders()) {
-        if (matches(f.name, needle)) folderHits.append(f);
+        if (TextUtils::normalized(f.name).contains(needle))
+            folderHits.append(f);
     }
 
-    // Matching tracks (title, artist or playlist name)
-    QList<Track> trackHits;
-    for (const auto &t : m_model->tracks()) {
-        if (matches(t.title, needle) || matches(t.artist, needle) || matches(t.folder, needle))
-            trackHits.append(t);
-    }
-
-    auto *title = new QLabel(QString(Lang::tr("Resultados para “%1”")).arg(m_query));
-    title->setFont(Theme::titleFont(24));
-    lumen::design::StyleSheet::apply(title, QString("color: %1; background: transparent; padding-bottom: 8px;").arg(Theme::text().name()));
-    m_contentLayout->addWidget(title);
-
-    if (folderHits.isEmpty() && trackHits.isEmpty()) {
-        auto *empty = new QLabel(QString(Lang::tr("Nenhum resultado para “%1”\nVerifique a escrita ou tente outras palavras")).arg(m_query));
-        empty->setFont(Theme::bodyFont(14));
-        lumen::design::StyleSheet::apply(empty, QString("color: %1; background: transparent; padding-top: 40px;").arg(Theme::textMuted().name()));
-        empty->setAlignment(Qt::AlignCenter);
-        m_contentLayout->addWidget(empty);
-        m_contentLayout->addStretch();
-        return;
-    }
-
+    auto *lay = m_playlistHits->layout();
     if (!folderHits.isEmpty()) {
-        auto *playlistsLabel = new QLabel(Lang::tr("Playlists"));
-        playlistsLabel->setFont(Theme::titleFont(18));
-        lumen::design::StyleSheet::apply(playlistsLabel, QString("color: %1; background: transparent; padding-top: 4px;").arg(Theme::text().name()));
-        m_contentLayout->addWidget(playlistsLabel);
+        auto *lbl = new QLabel(Lang::tr("Playlists"), m_playlistHits);
+        lbl->setFont(Theme::bodyFont(12));
+        lumen::design::StyleSheet::apply(lbl, QString(
+            "color: %1; background: transparent; font-weight: bold;"
+        ).arg(Theme::textMuted().name()));
+        lay->addWidget(lbl);
 
-        auto *grid = new QGridLayout();
-        grid->setSpacing(8);
-        int col = 0, row = 0;
         for (const auto &f : folderHits) {
-            int count = m_model->tracksInFolder(f.name).size();
-            grid->addWidget(createPlaylistCard(f, count), row, col);
-            if (++col >= 3) { col = 0; row++; }
+            auto *btn = new QPushButton(f.name, m_playlistHits);
+            btn->setCursor(Qt::PointingHandCursor);
+            btn->setFont(Theme::bodyFont(13));
+            lumen::design::StyleSheet::apply(btn, QString(
+                "QPushButton { background: %1; color: %2; border: none; border-radius: 8px; "
+                "padding: 10px 14px; text-align: left; }"
+                "QPushButton:hover { background: %3; }"
+            ).arg(Theme::card().name(), Theme::text().name(), Theme::cardHover().name()));
+            const QString name = f.name;
+            connect(btn, &QPushButton::clicked, this, [this, name]() {
+                emit navigateTo(QStringLiteral("folder"), name);
+            });
+            lay->addWidget(btn);
         }
-        // Keep cards from stretching across the page when there are few hits.
-        grid->setColumnStretch(3, 1);
-        auto *gridWidget = new QWidget();
-        gridWidget->setLayout(grid);
-        lumen::design::StyleSheet::apply(gridWidget, "background: transparent;");
-        m_contentLayout->addWidget(gridWidget);
-        m_contentLayout->addSpacing(12);
+        m_playlistHits->show();
+    } else {
+        m_playlistHits->hide();
     }
 
-    if (!trackHits.isEmpty()) {
-        auto *tracksLabel = new QLabel(Lang::tr("Músicas"));
-        tracksLabel->setFont(Theme::titleFont(18));
-        lumen::design::StyleSheet::apply(tracksLabel, QString("color: %1; background: transparent; padding-top: 4px;").arg(Theme::text().name()));
-        m_contentLayout->addWidget(tracksLabel);
-
-        for (int i = 0; i < trackHits.size(); ++i) {
-            m_contentLayout->addWidget(createTrackRow(trackHits[i], i, currentTrackId));
-        }
+    const int trackHits = m_proxy->rowCount();
+    if (trackHits == 0 && folderHits.isEmpty()) {
+        m_empty->setText(QString(Lang::tr(
+            "Nenhum resultado para “%1”\nVerifique a escrita ou tente outras palavras"))
+            .arg(m_query));
+        m_empty->show();
+        m_view->hide();
+    } else {
+        m_empty->hide();
+        m_view->setVisible(trackHits > 0);
     }
-
-    m_contentLayout->addStretch();
-}
-
-QWidget *SearchPage::createPlaylistCard(const Folder &folder, int trackCount) {
-    auto *chip = new QPushButton();
-    chip->setFixedSize(220, 64);
-    chip->setCursor(Qt::PointingHandCursor);
-    lumen::design::StyleSheet::apply(chip, QString(
-        "QPushButton { background: %1; border: none; border-radius: 8px; }"
-        "QPushButton:hover { background: %2; }"
-    ).arg(Theme::card().name(), Theme::cardHover().name()));
-
-    auto *layout = new QHBoxLayout(chip);
-    layout->setContentsMargins(8, 8, 12, 8);
-    layout->setSpacing(10);
-
-    layout->addWidget(CoverWidget::playlistCover(folder, m_model->tracksInFolder(folder.name), 48, 6),
-                      0, Qt::AlignVCenter);
-
-    auto *infoLayout = new QVBoxLayout();
-    infoLayout->setSpacing(1);
-    auto *nameLabel = new QLabel(folder.name);
-    nameLabel->setFont(Theme::bodyFont(13));
-    lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent; font-weight: bold;").arg(Theme::text().name()));
-    auto *countLabel = new QLabel(QString(Lang::tr("%1 faixa%2")).arg(trackCount).arg(trackCount != 1 ? "s" : ""));
-    countLabel->setFont(Theme::bodyFont(10));
-    lumen::design::StyleSheet::apply(countLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
-    infoLayout->addStretch();
-    infoLayout->addWidget(nameLabel);
-    infoLayout->addWidget(countLabel);
-    infoLayout->addStretch();
-    layout->addLayout(infoLayout, 1);
-
-    QString name = folder.name;
-    connect(chip, &QPushButton::clicked, [this, name]() { emit navigateTo("folder", name); });
-    return chip;
-}
-
-QWidget *SearchPage::createTrackRow(const Track &track, int index, int currentId) {
-    bool active = (track.id == currentId);
-    auto *row = new QWidget();
-    row->setObjectName("trackRow");
-    row->setFixedHeight(52);
-    row->setCursor(Qt::PointingHandCursor);
-    lumen::design::StyleSheet::apply(row, QString(
-        "QWidget#trackRow { background: %1; border-radius: 8px; border-left: 3px solid %2; }"
-    ).arg(
-        active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"),
-        active ? Theme::accent().name() : "transparent"
-    ));
-
-    auto *layout = new QHBoxLayout(row);
-    layout->setContentsMargins(12, 4, 12, 4);
-    layout->setSpacing(12);
-
-    QString idxNum = QString("%1").arg(index + 1, 2, 10, QChar('0'));
-    auto *idx = new QLabel(active ? QStringLiteral("") : idxNum);
-    idx->setFont(Theme::monoFont(12));
-    idx->setFixedWidth(28);
-    idx->setAlignment(Qt::AlignCenter);
-    lumen::design::StyleSheet::apply(idx, QString("color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;").arg(
-        active ? Theme::accent().name() : Theme::textMuted().name()));
-    idx->setAttribute(Qt::WA_TransparentForMouseEvents);
-    layout->addWidget(idx);
-
-    auto *swatch = new QWidget();
-    swatch->setFixedSize(38, 38);
-    swatch->setAttribute(Qt::WA_TransparentForMouseEvents);
-    lumen::design::StyleSheet::apply(swatch, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1, stop:1 %2); border-radius: 6px;")
-        .arg(track.cover.c1.name(), track.cover.c2.name()));
-    layout->addWidget(swatch);
-
-    auto *infoLayout = new QVBoxLayout();
-    infoLayout->setSpacing(1);
-    auto *title = new QLabel(track.title);
-    title->setFont(Theme::bodyFont(13));
-    title->setAttribute(Qt::WA_TransparentForMouseEvents);
-    lumen::design::StyleSheet::apply(title, QString("color: %1; background: transparent; font-weight: 600;").arg(
-        active ? Theme::accent().name() : Theme::text().name()));
-    auto *artist = new QLabel(track.artist);
-    artist->setFont(Theme::bodyFont(11));
-    artist->setAttribute(Qt::WA_TransparentForMouseEvents);
-    lumen::design::StyleSheet::apply(artist, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
-    infoLayout->addWidget(title);
-    infoLayout->addWidget(artist);
-    layout->addLayout(infoLayout, 1);
-
-    if (!track.folder.isEmpty()) {
-        auto *tag = new QPushButton(track.folder);
-        tag->setFont(Theme::bodyFont(10));
-        tag->setCursor(Qt::PointingHandCursor);
-        lumen::design::StyleSheet::apply(tag, QString(
-            "QPushButton { color: %1; background: " + Theme::accentRgba(0.10) + "; border: none; border-radius: 10px; padding: 2px 8px; }"
-            "QPushButton:hover { background: " + Theme::accentRgba(0.28) + "; color: %2; }"
-        ).arg(Theme::accentDim().name(), Theme::text().name()));
-        QString folderName = track.folder;
-        connect(tag, &QPushButton::clicked, [this, folderName]() { emit navigateTo("folder", folderName); });
-        layout->addWidget(tag);
-    }
-
-    auto *queueBtn = new QPushButton(QStringLiteral(""));
-    queueBtn->setFixedSize(28, 28);
-    queueBtn->setCursor(Qt::PointingHandCursor);
-    queueBtn->setToolTip(Lang::tr("Adicionar à fila"));
-    lumen::design::StyleSheet::apply(queueBtn, QString(
-        "QPushButton { background: transparent; color: %1; border: none; font-size: 13px; font-family: \"Segoe MDL2 Assets\"; }"
-        "QPushButton:hover { color: %2; }"
-    ).arg(Theme::textMuted().name(), Theme::accent().name()));
-    Track qt = track;
-    connect(queueBtn, &QPushButton::clicked, [this, qt]() { emit enqueueRequested(qt); });
-    layout->addWidget(queueBtn);
-
-    auto *likeBtn = new QPushButton(track.liked ? "" : "");
-    likeBtn->setFixedSize(28, 28);
-    likeBtn->setCursor(Qt::PointingHandCursor);
-    lumen::design::StyleSheet::apply(likeBtn, QString(
-        "QPushButton { background: transparent; color: %1; border: none; font-size: 14px; font-family: \"Segoe MDL2 Assets\"; }"
-        "QPushButton:hover { color: %2; }"
-    ).arg(track.liked ? Theme::accent().name() : Theme::textMuted().name(), Theme::accent().name()));
-    int likeId = track.id;
-    connect(likeBtn, &QPushButton::clicked, [this, likeId]() { emit likeToggled(likeId); });
-    layout->addWidget(likeBtn);
-
-    auto *dur = new QLabel(Theme::formatTime(track.durationMs));
-    dur->setFont(Theme::monoFont(11));
-    dur->setFixedWidth(40);
-    dur->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    lumen::design::StyleSheet::apply(dur, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
-    layout->addWidget(dur);
-
-    Track t = track;
-    auto *overlay = new QPushButton(row);
-    overlay->setGeometry(0, 0, 9999, 52);
-    lumen::design::StyleSheet::apply(overlay, "background: transparent; border: none;");
-    overlay->setCursor(Qt::PointingHandCursor);
-    overlay->lower();
-    connect(overlay, &QPushButton::clicked, [this, t]() { emit playRequested(t); });
-    if (!active) overlay->installEventFilter(new HoverPlayFilter(idx, idxNum, overlay));
-
-    return row;
 }

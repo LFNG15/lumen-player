@@ -188,6 +188,11 @@ const QHash<QString, QString> &enDict()
          QStringLiteral("«%1» was added to %2. The file was not duplicated — it remains in %3's folder.")},
         {QStringLiteral("«%1» foi adicionada a %2. O arquivo permanece na pasta geral do Lumen Music."),
          QStringLiteral("«%1» was added to %2. The file remains in the general Lumen Music folder.")},
+        {QStringLiteral("Tocar"), QStringLiteral("Play")},
+        {QStringLiteral("Curtir"), QStringLiteral("Like")},
+        {QStringLiteral("Descurtir"), QStringLiteral("Unlike")},
+        {QStringLiteral("Excluir"), QStringLiteral("Delete")},
+        {QStringLiteral("Tocar curtidas"), QStringLiteral("Play liked songs")},
     };
     return en;
 }

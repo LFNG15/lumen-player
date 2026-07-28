@@ -60,6 +60,10 @@ set(PROJECT_SOURCES
     src/pages/importplaylistdialog.cpp
     src/player/playerbar.cpp
     src/player/trackmodel.cpp
+    src/models/tracklistmodel.cpp
+    src/models/trackfilterproxy.cpp
+    src/models/trackrowdelegate.cpp
+    src/models/trackcontextmenu.cpp
     src/widgets/vinylwidget.cpp
     src/widgets/clickableslider.cpp
 )
@@ -86,11 +90,13 @@ set(PROJECT_HEADERS
     src/pages/importplaylistdialog.h
     src/player/playerbar.h
     src/player/trackmodel.h
+    src/models/tracklistmodel.h
+    src/models/trackfilterproxy.h
+    src/models/trackrowdelegate.h
+    src/models/trackcontextmenu.h
     src/widgets/vinylwidget.h
     src/widgets/clickableslider.h
     src/widgets/theme.h
-    src/widgets/hoverplayfilter.h
-    src/widgets/reorderablelist.h
     src/widgets/mediatools.h
     src/widgets/lang.h
     src/widgets/coverwidget.h
@@ -110,6 +116,7 @@ target_include_directories(LumenMusic PRIVATE
     src/widgets
     src/database
     src/design
+    src/models
 )
 
 target_link_libraries(LumenMusic PRIVATE

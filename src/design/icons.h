@@ -14,8 +14,9 @@ inline QString shuffle()    { return QStringLiteral(u"\uE8B1"); }
 inline QString repeat()     { return QStringLiteral(u"\uE8EE"); }
 inline QString volume()     { return QStringLiteral(u"\uE767"); }
 inline QString volumeMute() { return QStringLiteral(u"\uE74F"); }
-inline QString heart()      { return QStringLiteral(u"\uE00B"); }
-inline QString heartFill()  { return QStringLiteral(u"\uE0A5"); }
+inline QString heart()        { return QStringLiteral(u"\uE00B"); } // filled
+inline QString heartOutline() { return QStringLiteral(u"\uE006"); } // outline
+inline QString heartFill()    { return QStringLiteral(u"\uE0A5"); }
 inline QString more()       { return QStringLiteral(u"\uE712"); }
 inline QString search()     { return QStringLiteral(u"\uE721"); }
 inline QString home()       { return QStringLiteral(u"\uE10F"); }

@@ -2,12 +2,16 @@
 #define SEARCHPAGE_H
 
 #include <QWidget>
-#include <QVBoxLayout>
-#include <QScrollArea>
 #include "trackmodel.h"
 
-// Global search results: playlists and tracks matching the query typed in the
-// top search bar (title, artist or playlist name, case/accent-insensitive).
+class QListView;
+class QLabel;
+class QTimer;
+class TrackListModel;
+class TrackFilterProxy;
+class TrackRowDelegate;
+class TrackContextMenu;
+
 class SearchPage : public QWidget {
     Q_OBJECT
 public:
@@ -24,12 +28,23 @@ signals:
     void navigateTo(const QString &page, const QString &data = "");
 
 private:
-    QWidget *createTrackRow(const Track &track, int index, int currentId);
-    QWidget *createPlaylistCard(const Folder &folder, int trackCount);
+    void applyQuery();
+    void showContext(const QPoint &globalPos);
+    QList<int> selectedIds() const;
 
-    TrackModel *m_model;
-    QVBoxLayout *m_contentLayout;
+    TrackModel *m_model = nullptr;
     QString m_query;
+    QLabel *m_title = nullptr;
+    QLabel *m_empty = nullptr;
+    QWidget *m_playlistHits = nullptr;
+    QListView *m_view = nullptr;
+    TrackListModel *m_listModel = nullptr;
+    TrackFilterProxy *m_proxy = nullptr;
+    TrackRowDelegate *m_delegate = nullptr;
+    TrackContextMenu *m_ctx = nullptr;
+    QTimer *m_debounce = nullptr;
+    int m_currentId = 0;
+    bool m_playing = false;
 };
 
 #endif // SEARCHPAGE_H
