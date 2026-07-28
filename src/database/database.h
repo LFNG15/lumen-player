@@ -75,11 +75,14 @@ public:
     int seedFakeLibrary(int n);
 
     struct PlaybackState {
-        int    trackId  = 0;
-        qint64 posMs    = 0;
-        double volume   = 0.7;
-        bool   shuffle  = false;
-        bool   repeat   = false;
+        int    trackId    = 0;
+        qint64 posMs      = 0;
+        double volume     = 0.7;
+        bool   muted      = false;
+        bool   shuffle    = false;
+        int    repeatMode = 0;   // 0=Off, 1=All, 2=One
+        QList<int> contextIds;
+        QList<int> userQueueIds;
     };
     PlaybackState loadState();
     void          saveState(const PlaybackState &s);

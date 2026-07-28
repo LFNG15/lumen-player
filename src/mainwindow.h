@@ -9,6 +9,7 @@
 #include <QTimer>
 #include "trackmodel.h"
 #include "playerbar.h"
+#include "playbackengine.h"
 #include "homepage.h"
 #include "addmusicpage.h"
 #include "folderspage.h"
@@ -52,6 +53,7 @@ private:
     void reapplyChromeStyles();
 
     TrackModel *m_model;
+    PlaybackEngine *m_engine = nullptr;
     PlayerBar *m_playerBar;
 
     QStackedWidget *m_stack;

@@ -92,8 +92,9 @@ MainWindow::MainWindow(QWidget *parent)
     m_splitter->setStretchFactor(1, 1);
     mainLayout->addWidget(m_splitter, 1);
 
-    // ── Player bar ──────────────────────────────────────────
-    m_playerBar = new PlayerBar(m_model, this);
+    // ── Playback engine + player bar (view) ─────────────────
+    m_engine = new PlaybackEngine(m_model, this);
+    m_playerBar = new PlayerBar(m_engine, this);
     mainLayout->addWidget(m_playerBar);
 
     m_stack->addWidget(m_searchPage);  // 5

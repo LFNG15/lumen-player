@@ -193,6 +193,9 @@ const QHash<QString, QString> &enDict()
         {QStringLiteral("Descurtir"), QStringLiteral("Unlike")},
         {QStringLiteral("Excluir"), QStringLiteral("Delete")},
         {QStringLiteral("Tocar curtidas"), QStringLiteral("Play liked songs")},
+        {QStringLiteral("Repetir"), QStringLiteral("Repeat")},
+        {QStringLiteral("Repetir todas"), QStringLiteral("Repeat all")},
+        {QStringLiteral("Repetir uma"), QStringLiteral("Repeat one")},
     };
     return en;
 }

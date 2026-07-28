@@ -59,6 +59,7 @@ set(PROJECT_SOURCES
     src/pages/searchpage.cpp
     src/pages/importplaylistdialog.cpp
     src/player/playerbar.cpp
+    src/player/playbackengine.cpp
     src/player/trackmodel.cpp
     src/models/tracklistmodel.cpp
     src/models/trackfilterproxy.cpp
@@ -89,6 +90,7 @@ set(PROJECT_HEADERS
     src/pages/searchpage.h
     src/pages/importplaylistdialog.h
     src/player/playerbar.h
+    src/player/playbackengine.h
     src/player/trackmodel.h
     src/models/tracklistmodel.h
     src/models/trackfilterproxy.h

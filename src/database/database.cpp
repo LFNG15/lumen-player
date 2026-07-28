@@ -784,34 +784,85 @@ int Database::seedFakeLibrary(int n)
 
 // --- Playback state -----------------------------------------------------------
 
+namespace {
+
+QString joinIds(const QList<int> &ids)
+{
+    QStringList parts;
+    parts.reserve(ids.size());
+    for (int id : ids)
+        parts.append(QString::number(id));
+    return parts.join(QLatin1Char(','));
+}
+
+QList<int> splitIds(const QString &csv)
+{
+    QList<int> ids;
+    if (csv.isEmpty()) return ids;
+    const auto parts = csv.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString &p : parts) {
+        bool ok = false;
+        const int id = p.toInt(&ok);
+        if (ok && id > 0) ids.append(id);
+    }
+    return ids;
+}
+
+} // namespace
+
 Database::PlaybackState Database::loadState()
 {
+    // Ensure extended columns exist (P4). Fails harmlessly if already present.
+    QSqlQuery alter;
+    alter.exec(QStringLiteral(
+        "ALTER TABLE playback_state ADD COLUMN muted INTEGER NOT NULL DEFAULT 0"));
+    alter.exec(QStringLiteral(
+        "ALTER TABLE playback_state ADD COLUMN context_ids TEXT NOT NULL DEFAULT ''"));
+    alter.exec(QStringLiteral(
+        "ALTER TABLE playback_state ADD COLUMN user_queue_ids TEXT NOT NULL DEFAULT ''"));
+
     PlaybackState s;
     QSqlQuery q(QStringLiteral(
-        "SELECT current_track_id, position_ms, volume, shuffle, repeat_mode "
+        "SELECT current_track_id, position_ms, volume, shuffle, repeat_mode, "
+        "       muted, context_ids, user_queue_ids "
         "FROM playback_state WHERE id = 1"));
     if (q.next()) {
-        s.trackId = q.value(0).toInt();
-        s.posMs   = q.value(1).toLongLong();
-        s.volume  = q.value(2).toDouble();
-        s.shuffle = q.value(3).toInt() == 1;
-        s.repeat  = q.value(4).toInt() == 1;
+        s.trackId    = q.value(0).toInt();
+        s.posMs      = q.value(1).toLongLong();
+        s.volume     = q.value(2).toDouble();
+        s.shuffle    = q.value(3).toInt() == 1;
+        s.repeatMode = q.value(4).toInt();
+        s.muted      = q.value(5).toInt() == 1;
+        s.contextIds = splitIds(q.value(6).toString());
+        s.userQueueIds = splitIds(q.value(7).toString());
     }
     return s;
 }
 
 void Database::saveState(const PlaybackState &s)
 {
+    QSqlQuery alter;
+    alter.exec(QStringLiteral(
+        "ALTER TABLE playback_state ADD COLUMN muted INTEGER NOT NULL DEFAULT 0"));
+    alter.exec(QStringLiteral(
+        "ALTER TABLE playback_state ADD COLUMN context_ids TEXT NOT NULL DEFAULT ''"));
+    alter.exec(QStringLiteral(
+        "ALTER TABLE playback_state ADD COLUMN user_queue_ids TEXT NOT NULL DEFAULT ''"));
+
     QSqlQuery q;
     q.prepare(QStringLiteral(
         "UPDATE playback_state "
         "SET current_track_id = ?, position_ms = ?, volume = ?, "
-        "    shuffle = ?, repeat_mode = ? "
+        "    shuffle = ?, repeat_mode = ?, muted = ?, "
+        "    context_ids = ?, user_queue_ids = ? "
         "WHERE id = 1"));
     q.addBindValue(s.trackId);
     q.addBindValue(s.posMs);
     q.addBindValue(s.volume);
     q.addBindValue(s.shuffle ? 1 : 0);
-    q.addBindValue(s.repeat  ? 1 : 0);
+    q.addBindValue(s.repeatMode);
+    q.addBindValue(s.muted ? 1 : 0);
+    q.addBindValue(joinIds(s.contextIds));
+    q.addBindValue(joinIds(s.userQueueIds));
     q.exec();
 }
