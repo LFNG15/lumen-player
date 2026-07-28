@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "Branch_v*", "feat/**", "fix/**"]
+  pull_request:
+    branches: [main, "Branch_v*"]
+
+jobs:
+  build-windows:
+    name: Windows MSVC
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt 6.11 (msvc2022_64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.11.0"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtmultimedia
+          cache: true
+          # FFmpeg multimedia backend ships with qtmultimedia on 6.11.
+
+      - name: Configure
+        shell: pwsh
+        env:
+          QTDIR: ${{ env.QT_ROOT_DIR }}
+        run: |
+          if (-not $env:QTDIR -and $env:QT_ROOT_DIR) { $env:QTDIR = $env:QT_ROOT_DIR }
+          if (-not $env:QTDIR -and $env:Qt6_DIR) {
+            $candidate = (Resolve-Path "$env:Qt6_DIR/../../..").Path
+            if (Test-Path "$candidate/bin/qmake.exe") { $env:QTDIR = $candidate }
+          }
+          Write-Host "QTDIR=$env:QTDIR"
+          if (-not (Test-Path "$env:QTDIR/lib/cmake/Qt6")) {
+            throw "Qt6 CMake package not found under QTDIR=$env:QTDIR"
+          }
+          cmake --preset msvc-ninja
+
+      - name: Build
+        run: cmake --build --preset msvc-ninja
+
+      - name: I18N canary (EN translation keys)
+        shell: pwsh
+        run: |
+          $exe = "build/msvc-ninja/LumenMusic.exe"
+          if (-not (Test-Path $exe)) { throw "binary missing: $exe" }
+          $qtRoot = $env:QT_ROOT_DIR
+          if (-not $qtRoot) { $qtRoot = $env:QTDIR }
+          $windeploy = Join-Path $qtRoot "bin/windeployqt.exe"
+          & $windeploy --release --no-translations --no-system-d3d-compiler $exe
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt failed" }
+          & $exe --i18n-canary
+          if ($LASTEXITCODE -ne 0) { throw "I18N canary failed" }
+
+      - name: Gate — no setStyleSheet outside design/ (P1+)
+        shell: pwsh
+        run: |
+          # Soft until P1 closes: warn only. Flip to hard fail after G1.
+          $files = Get-ChildItem -Path src -Recurse -Include *.cpp,*.h |
+            Where-Object { $_.FullName -notmatch '\\design\\' }
+          $hits = @()
+          foreach ($f in $files) {
+            if (Select-String -Path $f.FullName -Pattern 'setStyleSheet' -SimpleMatch -Quiet) {
+              $hits += $f.FullName
+            }
+          }
+          if ($hits.Count -gt 0) {
+            Write-Host "::warning::setStyleSheet still present outside src/design/ (expected until P1 gate G1): $($hits.Count) files"
+          } else {
+            Write-Host "setStyleSheet gate clean"
+          }
