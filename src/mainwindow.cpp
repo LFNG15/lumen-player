@@ -5,6 +5,9 @@
 #include "mainwindow.h"
 #include "lang.h"
 #include "theme.h"
+#include <QShowEvent>
+#include <QEvent>
+#include <QApplication>
 #include <QLabel>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -293,7 +296,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Persist the playback session on quit — aboutToQuit also fires on the
     // theme/language restart path, which skips closeEvent.
-    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() { m_playerBar->persistState(); });
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
+        m_playerBar->persistState();
+        if (m_nowPlaying)
+            m_nowPlaying->setEnabled(false);
+    });
 
     // Resume the last session: same track, same position, paused.
     m_playerBar->restoreSession();
@@ -302,8 +309,151 @@ MainWindow::MainWindow(QWidget *parent)
     navigateTo("home");
 }
 
+void MainWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    // SMTC needs a real HWND — only available after the window is shown.
+    if (!m_platformReady)
+        setupPlatformIntegration();
+}
+
+void MainWindow::setupPlatformIntegration()
+{
+    m_platformReady = true;
+
+    // --- SMTC (or null) ---
+    m_nowPlaying = lumen::platform::NowPlaying::create(this);
+    if (m_nowPlaying) {
+        connect(m_nowPlaying.get(), &lumen::platform::NowPlaying::commandReceived,
+                this, &MainWindow::onNowPlayingCommand);
+
+        connect(m_engine, &PlaybackEngine::trackChanged, this, [this](int) {
+            pushNowPlayingMetadata();
+        });
+        connect(m_engine, &PlaybackEngine::playingChanged, this, [this](bool playing) {
+            if (m_nowPlaying)
+                m_nowPlaying->setPlaybackState(playing);
+        });
+        connect(m_engine, &PlaybackEngine::positionChanged, this, [this](qint64 pos) {
+            if (m_nowPlaying)
+                m_nowPlaying->setTimeline(pos, m_engine->duration());
+        });
+        connect(m_engine, &PlaybackEngine::durationChanged, this, [this](qint64 dur) {
+            if (m_nowPlaying)
+                m_nowPlaying->setTimeline(m_engine->position(), dur);
+        });
+        connect(m_engine, &PlaybackEngine::queueChanged, this, [this]() {
+            if (!m_nowPlaying) return;
+            m_nowPlaying->setCanNext(true);
+            m_nowPlaying->setCanPrevious(true);
+        });
+
+        m_nowPlaying->setEnabled(true);
+        if (m_engine->currentTrackId() != 0)
+            pushNowPlayingMetadata();
+        m_nowPlaying->setPlaybackState(m_engine->isPlaying());
+    }
+
+    // --- Media keys fallback when SMTC is unavailable ---
+    m_mediaKeys = new lumen::platform::MediaKeys(this);
+    if (!m_nowPlaying || !m_nowPlaying->isAvailable()) {
+        m_mediaKeys->install();
+        connect(m_mediaKeys, &lumen::platform::MediaKeys::playPause,
+                m_engine, &PlaybackEngine::togglePlay);
+        connect(m_mediaKeys, &lumen::platform::MediaKeys::next,
+                m_engine, &PlaybackEngine::next);
+        connect(m_mediaKeys, &lumen::platform::MediaKeys::previous,
+                m_engine, &PlaybackEngine::prev);
+        connect(m_mediaKeys, &lumen::platform::MediaKeys::stop,
+                m_engine, &PlaybackEngine::stop);
+    }
+
+    // --- System tray ---
+    m_tray = new lumen::platform::TrayIcon(m_engine, this);
+    if (m_tray->isAvailable()) {
+        m_tray->show();
+        connect(m_tray, &lumen::platform::TrayIcon::showMainWindow, this, [this]() {
+            showNormal();
+            raise();
+            activateWindow();
+        });
+        connect(m_tray, &lumen::platform::TrayIcon::quitRequested, this, [this]() {
+            m_minimizeToTray = false;
+            close();
+        });
+    }
+}
+
+void MainWindow::pushNowPlayingMetadata()
+{
+    if (!m_nowPlaying || !m_engine) return;
+    const Track t = m_engine->currentTrack();
+    if (t.id == 0) {
+        m_nowPlaying->setEnabled(false);
+        return;
+    }
+    m_nowPlaying->setEnabled(true);
+    lumen::platform::NowPlayingInfo info;
+    info.title = t.title;
+    info.artist = t.artist;
+    info.album = t.folder;
+    info.color1 = t.cover.c1;
+    info.color2 = t.cover.c2;
+    info.durationMs = t.durationMs > 0 ? t.durationMs : m_engine->duration();
+    m_nowPlaying->setMetadata(info);
+    m_nowPlaying->setPlaybackState(m_engine->isPlaying());
+    m_nowPlaying->setTimeline(m_engine->position(), info.durationMs);
+    m_nowPlaying->setCanNext(true);
+    m_nowPlaying->setCanPrevious(true);
+}
+
+void MainWindow::onNowPlayingCommand(lumen::platform::TransportCommand cmd, qint64 argMs)
+{
+    if (!m_engine) return;
+    using TC = lumen::platform::TransportCommand;
+    switch (cmd) {
+    case TC::Play:
+        if (!m_engine->isPlaying()) m_engine->togglePlay();
+        break;
+    case TC::Pause:
+        if (m_engine->isPlaying()) m_engine->togglePlay();
+        break;
+    case TC::Toggle:
+        m_engine->togglePlay();
+        break;
+    case TC::Next:
+        m_engine->next();
+        break;
+    case TC::Previous:
+        m_engine->prev();
+        break;
+    case TC::Stop:
+        m_engine->stop();
+        break;
+    case TC::Seek:
+        m_engine->seek(argMs);
+        break;
+    }
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::WindowStateChange
+        && isMinimized()
+        && m_minimizeToTray
+        && m_tray
+        && m_tray->isAvailable()) {
+        hide();
+        event->ignore();
+        return;
+    }
+    QMainWindow::changeEvent(event);
+}
+
 void MainWindow::closeEvent(QCloseEvent *event) {
     m_playerBar->persistState();
+    if (m_nowPlaying)
+        m_nowPlaying->setEnabled(false);
     QMainWindow::closeEvent(event);
 }
 

@@ -65,6 +65,8 @@ set(PROJECT_SOURCES
     src/models/trackfilterproxy.cpp
     src/models/trackrowdelegate.cpp
     src/models/trackcontextmenu.cpp
+    src/platform/mediakeys.cpp
+    src/platform/trayicon.cpp
     src/widgets/vinylwidget.cpp
     src/widgets/clickableslider.cpp
 )
@@ -96,6 +98,9 @@ set(PROJECT_HEADERS
     src/models/trackfilterproxy.h
     src/models/trackrowdelegate.h
     src/models/trackcontextmenu.h
+    src/platform/nowplaying.h
+    src/platform/mediakeys.h
+    src/platform/trayicon.h
     src/widgets/vinylwidget.h
     src/widgets/clickableslider.h
     src/widgets/theme.h
@@ -119,6 +124,7 @@ target_include_directories(LumenMusic PRIVATE
     src/database
     src/design
     src/models
+    src/platform
 )
 
 target_link_libraries(LumenMusic PRIVATE
@@ -129,6 +135,27 @@ target_link_libraries(LumenMusic PRIVATE
     Qt6::Sql
     Qt6::Network
 )
+
+# --- SMTC (SystemMediaTransportControls) via C++/WinRT — MSVC only ----------
+# No NuGet / no cppwinrt.exe: headers ship with the Windows SDK (verified).
+# Exactly one of nowplaying_win.cpp / nowplaying_null.cpp is compiled.
+if(WIN32 AND MSVC)
+    option(LUMEN_WITH_SMTC "SystemMediaTransportControls integration" ON)
+    include(CheckIncludeFileCXX)
+    # Need the MSVC + /utf-8 flags already applied for this check.
+    check_include_file_cxx("winrt/Windows.Media.h" HAVE_CPPWINRT)
+    if(LUMEN_WITH_SMTC AND HAVE_CPPWINRT)
+        target_sources(LumenMusic PRIVATE src/platform/nowplaying_win.cpp)
+        target_link_libraries(LumenMusic PRIVATE WindowsApp.lib)
+        target_compile_definitions(LumenMusic PRIVATE LUMEN_HAS_SMTC)
+        message(STATUS "SMTC: enabled (C++/WinRT found)")
+    else()
+        target_sources(LumenMusic PRIVATE src/platform/nowplaying_null.cpp)
+        message(STATUS "SMTC: disabled (LUMEN_WITH_SMTC=${LUMEN_WITH_SMTC}, HAVE_CPPWINRT=${HAVE_CPPWINRT})")
+    endif()
+else()
+    target_sources(LumenMusic PRIVATE src/platform/nowplaying_null.cpp)
+endif()
 
 # --- Windows-specific: icon, version metadata, GUI subsystem ----------------
 if(WIN32)

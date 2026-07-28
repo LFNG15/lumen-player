@@ -17,6 +17,11 @@
 #include "likedpage.h"
 #include "queuepage.h"
 #include "searchpage.h"
+#include "platform/nowplaying.h"
+#include "platform/mediakeys.h"
+#include "platform/trayicon.h"
+
+#include <memory>
 
 class QLineEdit;
 class QSplitter;
@@ -29,6 +34,8 @@ public:
 protected:
     void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private slots:
     void navigateTo(const QString &page, const QString &data = "");
@@ -51,10 +58,18 @@ private:
     void showSidebarSortMenu();
     void toggleSidebarSearch();
     void reapplyChromeStyles();
+    void setupPlatformIntegration();  // SMTC / media keys / tray (after show)
+    void pushNowPlayingMetadata();
+    void onNowPlayingCommand(lumen::platform::TransportCommand cmd, qint64 argMs);
 
     TrackModel *m_model;
     PlaybackEngine *m_engine = nullptr;
     PlayerBar *m_playerBar;
+    std::unique_ptr<lumen::platform::NowPlaying> m_nowPlaying;
+    lumen::platform::MediaKeys *m_mediaKeys = nullptr;
+    lumen::platform::TrayIcon  *m_tray = nullptr;
+    bool m_platformReady = false;
+    bool m_minimizeToTray = true;
 
     QStackedWidget *m_stack;
     HomePage *m_homePage;
