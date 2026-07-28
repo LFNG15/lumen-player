@@ -1,5 +1,7 @@
 #include "trackfilterproxy.h"
 
+#include <QtGlobal>
+
 TrackFilterProxy::TrackFilterProxy(QObject *parent)
     : QSortFilterProxyModel(parent)
 {
@@ -11,9 +13,13 @@ void TrackFilterProxy::setNeedle(const QString &normalizedNeedle)
 {
     if (m_needle == normalizedNeedle) return;
     m_needle = normalizedNeedle;
-    // Qt 6.10+: begin/endFilterChange avoids the deprecated invalidateFilter().
+    // begin/endFilterChange arrived in Qt 6.10; CI builds on 6.8.x.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
     beginFilterChange();
     endFilterChange();
+#else
+    invalidateFilter();
+#endif
 }
 
 bool TrackFilterProxy::filterAcceptsRow(int sourceRow,
