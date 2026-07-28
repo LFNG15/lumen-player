@@ -95,6 +95,7 @@ private:
     void  applySchema();
     void  ensureLegacySchema();
     void  ensureV2Schema();
+    void  ensurePlaybackStateSchema();
     bool  tableExists(const QString &name) const;
     Track rowToTrack(const class QSqlQuery &q, int ownerNameCol = -1,
                      int positionCol = -1) const;

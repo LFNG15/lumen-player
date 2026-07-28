@@ -17,7 +17,6 @@ signals:
     void playContext(const Track &track);        // play an item, keeping the current context
     void playFromQueue(int index);               // play a manually queued item by index
     void removeFromQueueRequested(int index);    // drop a manually queued item
-    void likeToggled(int id);
     void navigateBack();
 
 private:

@@ -245,10 +245,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_queuePage, &QueuePage::removeFromQueueRequested, this, [this](int index) {
         m_playerBar->removeFromQueue(index);
     });
-    connect(m_queuePage, &QueuePage::likeToggled, this, [this](int id) {
-        m_model->toggleLike(id);
-        refreshCurrentPage();
-    });
     connect(m_queuePage, &QueuePage::navigateBack, this, [this]() { m_queuePage->hide(); });
 
     // Search page
