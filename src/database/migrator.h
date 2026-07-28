@@ -15,11 +15,8 @@ namespace lumen {
 
 class Migrator {
 public:
-    // Highest schema version this binary knows how to produce.
-    static constexpr int kSchemaVersion = 1;
+    static constexpr int kSchemaVersion = 2;
 
-    // Run pending migrations. db must already be open. dbPath is the on-disk
-    // file used for WAL checkpoint + pre-migration backup.
     static bool run(QSqlDatabase &db, const QString &dbPath);
 
     static QString lastError();
@@ -30,7 +27,12 @@ private:
     static bool execSql(QSqlDatabase &db, const QString &sql);
     static bool checkpointWal(QSqlDatabase &db);
     static bool backupTo(const QString &dbPath, const QString &backupPath);
+    static bool tableExists(QSqlDatabase &db, const QString &name);
+    static bool columnExists(QSqlDatabase &db, const QString &table, const QString &column);
+    static bool recordMigration(QSqlDatabase &db, int version);
+
     static bool migrateTo1(QSqlDatabase &db);  // position ordinal fix
+    static bool migrateTo2(QSqlDatabase &db);  // N:N playlists
 };
 
 } // namespace lumen

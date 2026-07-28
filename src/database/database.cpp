@@ -1,5 +1,7 @@
 #include "database.h"
 #include "migrator.h"
+#include "mediatools.h"
+
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
@@ -9,26 +11,35 @@
 #include <QFileInfo>
 #include <QDateTime>
 #include <QDebug>
-#include <QColor>
+#include <QVariant>
 
-Database &Database::instance() {
+Database &Database::instance()
+{
     static Database db;
     return db;
 }
 
-bool Database::open() {
-    // Idempotent: TrackModel and CLI flags (--seed / --selftest) may both call open().
+bool Database::tableExists(const QString &name) const
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?"));
+    q.addBindValue(name);
+    return q.exec() && q.next();
+}
+
+bool Database::open()
+{
     if (QSqlDatabase::contains(QSqlDatabase::defaultConnection)
         && QSqlDatabase::database().isOpen()) {
         return true;
     }
 
-    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(dir);
-
     const QString dbPath = dir + QStringLiteral("/vinil.db");
 
-    QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
+    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"));
     db.setDatabaseName(dbPath);
 
     if (!db.open()) {
@@ -39,8 +50,6 @@ bool Database::open() {
 
     applySchema();
 
-    // Versioned migrations (P0b+). On failure refuse to run — a half-migrated
-    // library is worse than an app that will not open.
     if (!lumen::Migrator::run(db, dbPath)) {
         m_lastError = lumen::Migrator::lastError();
         qCritical() << "Database migration failed:" << m_lastError
@@ -48,14 +57,45 @@ bool Database::open() {
         return false;
     }
 
+    // After migration, ensure v2 objects exist (fresh installs that jumped).
+    ensureV2Schema();
     return true;
 }
 
-void Database::applySchema() {
+void Database::applySchema()
+{
     QSqlQuery q;
-    q.exec("PRAGMA journal_mode = WAL");
-    q.exec("PRAGMA foreign_keys = ON");
+    q.exec(QStringLiteral("PRAGMA journal_mode = WAL"));
+    q.exec(QStringLiteral("PRAGMA foreign_keys = ON"));
 
+    // Pre-migration shape so migrateTo1/2 have something to work on.
+    // Post-migration open uses ensureV2Schema() (called after Migrator::run).
+    if (!tableExists(QStringLiteral("playlists"))
+        && !tableExists(QStringLiteral("folders"))) {
+        ensureLegacySchema();
+    } else if (tableExists(QStringLiteral("folders"))
+               && !tableExists(QStringLiteral("playlists"))) {
+        ensureLegacySchema();
+    } else {
+        ensureV2Schema();
+    }
+
+    q.exec(R"(
+        CREATE TABLE IF NOT EXISTS playback_state (
+            id               INTEGER PRIMARY KEY CHECK (id = 1),
+            current_track_id INTEGER NOT NULL DEFAULT 0,
+            position_ms      INTEGER NOT NULL DEFAULT 0,
+            volume           REAL    NOT NULL DEFAULT 0.7 CHECK (volume >= 0.0 AND volume <= 1.0),
+            shuffle          INTEGER NOT NULL DEFAULT 0 CHECK (shuffle IN (0,1)),
+            repeat_mode      INTEGER NOT NULL DEFAULT 0 CHECK (repeat_mode IN (0,1))
+        )
+    )");
+    q.exec(QStringLiteral("INSERT OR IGNORE INTO playback_state (id) VALUES (1)"));
+}
+
+void Database::ensureLegacySchema()
+{
+    QSqlQuery q;
     q.exec(R"(
         CREATE TABLE IF NOT EXISTS folders (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,10 +106,8 @@ void Database::applySchema() {
             created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000)
         )
     )");
-
-    // Migration for databases created before cover_image existed.
-    // Fails harmlessly when the column is already present.
-    q.exec("ALTER TABLE folders ADD COLUMN cover_image TEXT NOT NULL DEFAULT ''");
+    q.exec(QStringLiteral(
+        "ALTER TABLE folders ADD COLUMN cover_image TEXT NOT NULL DEFAULT ''"));
 
     q.exec(R"(
         CREATE TABLE IF NOT EXISTS tracks (
@@ -89,57 +127,120 @@ void Database::applySchema() {
             FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET DEFAULT
         )
     )");
-
-    // Migrations for databases created before these columns existed.
-    // Each fails harmlessly when the column is already present.
-    q.exec("ALTER TABLE tracks ADD COLUMN last_played_at INTEGER NOT NULL DEFAULT 0");
-    q.exec("ALTER TABLE tracks ADD COLUMN position INTEGER NOT NULL DEFAULT 0");
-    // Issue #2 fix (P0b): the old one-shot
-    //   UPDATE tracks SET position = added_at WHERE position = 0
-    // ran on EVERY boot and destroyed custom playlist order (any track dragged
-    // to the top got position=0 and was rewritten to epoch-ms on next launch).
-    // Position scale is now unified by Migrator (user_version ≥ 1): ordinal
-    // gaps of 1024 starting at 1024. 0 is never a valid position again.
-
-    q.exec("CREATE INDEX IF NOT EXISTS idx_tracks_folder ON tracks(folder_id)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_tracks_liked  ON tracks(liked) WHERE liked = 1");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_tracks_added  ON tracks(added_at DESC)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_tracks_played ON tracks(play_count DESC) WHERE play_count > 0");
-
-    q.exec(R"(
-        CREATE TABLE IF NOT EXISTS playback_state (
-            id               INTEGER PRIMARY KEY CHECK (id = 1),
-            current_track_id INTEGER NOT NULL DEFAULT 0,
-            position_ms      INTEGER NOT NULL DEFAULT 0,
-            volume           REAL    NOT NULL DEFAULT 0.7 CHECK (volume >= 0.0 AND volume <= 1.0),
-            shuffle          INTEGER NOT NULL DEFAULT 0 CHECK (shuffle IN (0,1)),
-            repeat_mode      INTEGER NOT NULL DEFAULT 0 CHECK (repeat_mode IN (0,1))
-        )
-    )");
-
-    q.exec("INSERT OR IGNORE INTO playback_state (id) VALUES (1)");
-    q.exec("INSERT OR IGNORE INTO folders (id, name, cover_color1, cover_color2) VALUES (0, '', '#e8a44a', '#d45d5d')");
+    q.exec(QStringLiteral(
+        "ALTER TABLE tracks ADD COLUMN last_played_at INTEGER NOT NULL DEFAULT 0"));
+    q.exec(QStringLiteral(
+        "ALTER TABLE tracks ADD COLUMN position INTEGER NOT NULL DEFAULT 0"));
+    q.exec(QStringLiteral(
+        "INSERT OR IGNORE INTO folders (id, name, cover_color1, cover_color2) "
+        "VALUES (0, '', '#e8a44a', '#d45d5d')"));
 }
 
-
-int Database::findOrCreateFolder(const QString &name, const QColor &c1, const QColor &c2) {
+void Database::ensureV2Schema()
+{
     QSqlQuery q;
-    q.prepare("SELECT id FROM folders WHERE name = ?");
-    q.addBindValue(name);
-    q.exec();
-    if (q.next()) return q.value(0).toInt();
+    q.exec(R"(
+        CREATE TABLE IF NOT EXISTS playlists (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            name         TEXT    NOT NULL UNIQUE,
+            cover_color1 TEXT    NOT NULL DEFAULT '#e8a44a',
+            cover_color2 TEXT    NOT NULL DEFAULT '#d45d5d',
+            cover_image  TEXT    NOT NULL DEFAULT '',
+            dir_name     TEXT    NOT NULL DEFAULT '',
+            sort_mode    TEXT    NOT NULL DEFAULT 'custom',
+            created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000)
+        )
+    )");
+    q.exec(QStringLiteral(
+        "ALTER TABLE playlists ADD COLUMN dir_name TEXT NOT NULL DEFAULT ''"));
+    q.exec(QStringLiteral(
+        "ALTER TABLE playlists ADD COLUMN sort_mode TEXT NOT NULL DEFAULT 'custom'"));
 
-    q.prepare("INSERT INTO folders (name, cover_color1, cover_color2) VALUES (?, ?, ?)");
+    q.exec(R"(
+        CREATE TABLE IF NOT EXISTS tracks (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            title             TEXT    NOT NULL,
+            artist            TEXT    NOT NULL DEFAULT 'Desconhecido',
+            file_path         TEXT    NOT NULL,
+            owner_playlist_id INTEGER REFERENCES playlists(id) ON DELETE SET NULL,
+            duration_ms       INTEGER NOT NULL DEFAULT 0,
+            cover_color1      TEXT    NOT NULL DEFAULT '#e8a44a',
+            cover_color2      TEXT    NOT NULL DEFAULT '#d45d5d',
+            liked             INTEGER NOT NULL DEFAULT 0 CHECK (liked IN (0,1)),
+            liked_at          INTEGER NOT NULL DEFAULT 0,
+            added_at          INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000),
+            play_count        INTEGER NOT NULL DEFAULT 0,
+            last_played_at    INTEGER NOT NULL DEFAULT 0,
+            missing           INTEGER NOT NULL DEFAULT 0
+        )
+    )");
+    q.exec(QStringLiteral(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_path ON tracks(file_path)"));
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_tracks_liked ON tracks(liked) WHERE liked = 1"));
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_tracks_added ON tracks(added_at DESC)"));
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_tracks_played ON tracks(play_count DESC) "
+        "WHERE play_count > 0"));
+
+    q.exec(R"(
+        CREATE TABLE IF NOT EXISTS playlist_tracks (
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            track_id    INTEGER NOT NULL REFERENCES tracks(id)    ON DELETE CASCADE,
+            position    INTEGER NOT NULL,
+            added_at    INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000),
+            PRIMARY KEY (playlist_id, track_id)
+        ) WITHOUT ROWID
+    )");
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_pt_order ON playlist_tracks(playlist_id, position)"));
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_pt_track ON playlist_tracks(track_id)"));
+}
+
+// --- Playlists ----------------------------------------------------------------
+
+int Database::findOrCreatePlaylist(const QString &name, const QColor &c1, const QColor &c2)
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral("SELECT id FROM playlists WHERE name = ?"));
+    q.addBindValue(name);
+    if (q.exec() && q.next())
+        return q.value(0).toInt();
+    return createPlaylist(name, c1, c2);
+}
+
+int Database::createPlaylist(const QString &name, const QColor &c1, const QColor &c2,
+                             const QString &coverImage)
+{
+    const QString dirName = MediaTools::sanitizeFileName(name);
+    QSqlQuery q;
+    q.prepare(QStringLiteral(
+        "INSERT OR IGNORE INTO playlists "
+        "(name, cover_color1, cover_color2, cover_image, dir_name) "
+        "VALUES (?, ?, ?, ?, ?)"));
     q.addBindValue(name);
     q.addBindValue(c1.name());
     q.addBindValue(c2.name());
+    q.addBindValue(coverImage.isEmpty() ? QStringLiteral("") : coverImage);
+    q.addBindValue(dirName);
     q.exec();
-    return q.lastInsertId().toInt();
+    if (q.lastInsertId().toInt() > 0)
+        return q.lastInsertId().toInt();
+
+    q.prepare(QStringLiteral("SELECT id FROM playlists WHERE name = ?"));
+    q.addBindValue(name);
+    q.exec();
+    return q.next() ? q.value(0).toInt() : 0;
 }
 
-QList<Folder> Database::allFolders() {
+QList<Folder> Database::allPlaylists()
+{
     QList<Folder> result;
-    QSqlQuery q("SELECT id, name, cover_color1, cover_color2, cover_image FROM folders WHERE id != 0 ORDER BY name");
+    QSqlQuery q(QStringLiteral(
+        "SELECT id, name, cover_color1, cover_color2, cover_image, dir_name, sort_mode "
+        "FROM playlists ORDER BY name"));
     while (q.next()) {
         Folder f;
         f.id         = q.value(0).toInt();
@@ -147,308 +248,548 @@ QList<Folder> Database::allFolders() {
         f.cover.c1   = QColor(q.value(2).toString());
         f.cover.c2   = QColor(q.value(3).toString());
         f.coverImage = q.value(4).toString();
+        f.dirName    = q.value(5).toString();
+        f.sortMode   = q.value(6).toString();
         result.append(f);
     }
     return result;
 }
 
-int Database::createFolder(const QString &name, const QColor &c1, const QColor &c2,
-                           const QString &coverImage) {
+Folder Database::playlistById(int id)
+{
+    Folder f;
     QSqlQuery q;
-    q.prepare("INSERT OR IGNORE INTO folders (name, cover_color1, cover_color2, cover_image) VALUES (?, ?, ?, ?)");
-    q.addBindValue(name);
-    q.addBindValue(c1.name());
-    q.addBindValue(c2.name());
-    // Bind a non-null empty string; cover_image is NOT NULL and a null QString
-    // would bind as SQL NULL and fail the constraint.
-    q.addBindValue(coverImage.isEmpty() ? QString("") : coverImage);
-    q.exec();
-    if (q.lastInsertId().toInt() > 0) return q.lastInsertId().toInt();
-    // already existed - return its id
-    q.prepare("SELECT id FROM folders WHERE name = ?");
-    q.addBindValue(name);
-    q.exec();
-    return q.next() ? q.value(0).toInt() : 0;
+    q.prepare(QStringLiteral(
+        "SELECT id, name, cover_color1, cover_color2, cover_image, dir_name, sort_mode "
+        "FROM playlists WHERE id = ?"));
+    q.addBindValue(id);
+    if (q.exec() && q.next()) {
+        f.id         = q.value(0).toInt();
+        f.name       = q.value(1).toString();
+        f.cover.c1   = QColor(q.value(2).toString());
+        f.cover.c2   = QColor(q.value(3).toString());
+        f.coverImage = q.value(4).toString();
+        f.dirName    = q.value(5).toString();
+        f.sortMode   = q.value(6).toString();
+    }
+    return f;
 }
 
-void Database::renameFolder(int id, const QString &newName) {
+Folder Database::playlistByName(const QString &name)
+{
+    Folder f;
     QSqlQuery q;
-    q.prepare("UPDATE folders SET name = ? WHERE id = ?");
+    q.prepare(QStringLiteral(
+        "SELECT id, name, cover_color1, cover_color2, cover_image, dir_name, sort_mode "
+        "FROM playlists WHERE name = ?"));
+    q.addBindValue(name);
+    if (q.exec() && q.next()) {
+        f.id         = q.value(0).toInt();
+        f.name       = q.value(1).toString();
+        f.cover.c1   = QColor(q.value(2).toString());
+        f.cover.c2   = QColor(q.value(3).toString());
+        f.coverImage = q.value(4).toString();
+        f.dirName    = q.value(5).toString();
+        f.sortMode   = q.value(6).toString();
+    }
+    return f;
+}
+
+void Database::renamePlaylist(int id, const QString &newName)
+{
+    // dir_name is intentionally left unchanged so on-disk files stay findable.
+    QSqlQuery q;
+    q.prepare(QStringLiteral("UPDATE playlists SET name = ? WHERE id = ?"));
     q.addBindValue(newName);
     q.addBindValue(id);
     q.exec();
-    // Update all tracks that referenced this folder name
-    q.prepare("UPDATE tracks SET folder_id = folder_id WHERE folder_id = ?");
-    q.addBindValue(id);
-    q.exec();
 }
 
-void Database::updateFolderCover(int id, const QColor &c1, const QColor &c2) {
+void Database::updatePlaylistCover(int id, const QColor &c1, const QColor &c2)
+{
     QSqlQuery q;
-    q.prepare("UPDATE folders SET cover_color1 = ?, cover_color2 = ? WHERE id = ?");
+    q.prepare(QStringLiteral(
+        "UPDATE playlists SET cover_color1 = ?, cover_color2 = ? WHERE id = ?"));
     q.addBindValue(c1.name());
     q.addBindValue(c2.name());
     q.addBindValue(id);
     q.exec();
 }
 
-void Database::updateFolderCoverImage(int id, const QString &imagePath) {
+void Database::updatePlaylistCoverImage(int id, const QString &imagePath)
+{
     QSqlQuery q;
-    q.prepare("UPDATE folders SET cover_image = ? WHERE id = ?");
-    // Bind a non-null empty string when clearing; cover_image is NOT NULL, so a
-    // null QString would bind as SQL NULL and the UPDATE would silently fail.
-    q.addBindValue(imagePath.isEmpty() ? QString("") : imagePath);
+    q.prepare(QStringLiteral("UPDATE playlists SET cover_image = ? WHERE id = ?"));
+    q.addBindValue(imagePath.isEmpty() ? QStringLiteral("") : imagePath);
     q.addBindValue(id);
     q.exec();
 }
 
-QString Database::importCoverImage(const QString &sourcePath) {
+void Database::deletePlaylist(int id)
+{
+    // playlist_tracks CASCADE; owner_playlist_id ON DELETE SET NULL.
+    QSqlQuery q;
+    q.prepare(QStringLiteral("DELETE FROM playlists WHERE id = ?"));
+    q.addBindValue(id);
+    q.exec();
+}
+
+void Database::setPlaylistSortMode(int id, const QString &mode)
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral("UPDATE playlists SET sort_mode = ? WHERE id = ?"));
+    q.addBindValue(mode);
+    q.addBindValue(id);
+    q.exec();
+}
+
+QString Database::playlistSortMode(int id) const
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral("SELECT sort_mode FROM playlists WHERE id = ?"));
+    q.addBindValue(id);
+    if (q.exec() && q.next())
+        return q.value(0).toString();
+    return QStringLiteral("custom");
+}
+
+QString Database::playlistDiskPath(int id) const
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral("SELECT dir_name FROM playlists WHERE id = ?"));
+    q.addBindValue(id);
+    if (q.exec() && q.next()) {
+        const QString dir = q.value(0).toString();
+        if (!dir.isEmpty()) {
+            QString path = MediaTools::downloadDir() + QLatin1Char('/') + dir;
+            QDir().mkpath(path);
+            return path;
+        }
+    }
+    return MediaTools::downloadDir();
+}
+
+QString Database::playlistDiskPathByName(const QString &name) const
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral("SELECT id FROM playlists WHERE name = ?"));
+    q.addBindValue(name);
+    if (q.exec() && q.next())
+        return playlistDiskPath(q.value(0).toInt());
+    // Fallback for not-yet-created playlists: sanitize live name.
+    return MediaTools::playlistDir(name);
+}
+
+QString Database::importCoverImage(const QString &sourcePath)
+{
     if (sourcePath.isEmpty()) return QString();
 
-    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/covers";
+    const QString dir =
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        + QStringLiteral("/covers");
     QDir().mkpath(dir);
 
     QFileInfo fi(sourcePath);
-    QString dest = QString("%1/cover_%2.%3")
+    const QString dest = QStringLiteral("%1/cover_%2.%3")
         .arg(dir)
         .arg(QDateTime::currentMSecsSinceEpoch())
-        .arg(fi.suffix().isEmpty() ? "png" : fi.suffix());
+        .arg(fi.suffix().isEmpty() ? QStringLiteral("png") : fi.suffix());
 
     if (QFile::copy(sourcePath, dest)) return dest;
-    return sourcePath;  // fall back to referencing the original file
+    return sourcePath;
 }
 
-void Database::deleteFolder(int id) {
-    QSqlQuery q;
-    q.prepare("UPDATE tracks SET folder_id = 0 WHERE folder_id = ?");
-    q.addBindValue(id);
-    q.exec();
-    q.prepare("DELETE FROM folders WHERE id = ?");
-    q.addBindValue(id);
-    q.exec();
+// --- Tracks -------------------------------------------------------------------
+
+Track Database::rowToTrack(const QSqlQuery &q, int ownerNameCol, int positionCol) const
+{
+    Track t;
+    t.id         = q.value(0).toInt();
+    t.title      = q.value(1).toString();
+    t.artist     = q.value(2).toString();
+    t.audioUrl   = QUrl::fromLocalFile(q.value(3).toString());
+    t.ownerPlaylistId = q.value(4).isNull() ? 0 : q.value(4).toInt();
+    t.durationMs = q.value(5).toLongLong();
+    t.cover.c1   = QColor(q.value(6).toString());
+    t.cover.c2   = QColor(q.value(7).toString());
+    t.liked      = q.value(8).toInt() == 1;
+    t.likedAt    = q.value(9).toLongLong();
+    t.addedAt    = q.value(10).toLongLong();
+    t.playCount  = q.value(11).toInt();
+    t.lastPlayedAt = q.value(12).toLongLong();
+    t.missing    = q.value(13).toInt() == 1;
+
+    // Display "primary" playlist = owner name when present.
+    if (ownerNameCol >= 0) {
+        t.folder = q.value(ownerNameCol).toString();
+        t.folderId = t.ownerPlaylistId;
+    } else {
+        t.folderId = t.ownerPlaylistId;
+    }
+    if (positionCol >= 0)
+        t.position = q.value(positionCol).toLongLong();
+    return t;
 }
 
-qint64 Database::nextPositionForFolder(int folderId) {
+int Database::insertTrack(const Track &t, int playlistId)
+{
     QSqlQuery q;
     q.prepare(QStringLiteral(
-        "SELECT COALESCE(MAX(position), 0) + 1024 FROM tracks WHERE folder_id = ?"));
-    q.addBindValue(folderId);
+        "INSERT INTO tracks "
+        "(title, artist, file_path, owner_playlist_id, cover_color1, cover_color2, "
+        " duration_ms) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)"));
+    q.addBindValue(t.title);
+    q.addBindValue(t.artist);
+    q.addBindValue(t.audioUrl.toLocalFile());
+    // Owner is the first playlist the track is added to; advisory only.
+    if (playlistId > 0)
+        q.addBindValue(playlistId);
+    else
+        q.addBindValue(QVariant()); // NULL
+    q.addBindValue(t.cover.c1.name());
+    q.addBindValue(t.cover.c2.name());
+    q.addBindValue(t.durationMs);
+    if (!q.exec()) {
+        qWarning() << "insertTrack failed:" << q.lastError().text();
+        return 0;
+    }
+    const int id = q.lastInsertId().toInt();
+    if (playlistId > 0 && id > 0)
+        addTrackToPlaylist(id, playlistId);
+    return id;
+}
+
+void Database::updateTrack(int id, const QString &title, const QString &artist)
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral("UPDATE tracks SET title = ?, artist = ? WHERE id = ?"));
+    q.addBindValue(title);
+    q.addBindValue(artist.isEmpty() ? QStringLiteral("Desconhecido") : artist);
+    q.addBindValue(id);
+    q.exec();
+}
+
+void Database::deleteTrack(int id)
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral("DELETE FROM tracks WHERE id = ?"));
+    q.addBindValue(id);
+    q.exec();
+}
+
+void Database::setLiked(int id, bool liked)
+{
+    QSqlQuery q;
+    if (liked) {
+        q.prepare(QStringLiteral(
+            "UPDATE tracks SET liked = 1, liked_at = ? WHERE id = ?"));
+        q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+        q.addBindValue(id);
+    } else {
+        q.prepare(QStringLiteral(
+            "UPDATE tracks SET liked = 0, liked_at = 0 WHERE id = ?"));
+        q.addBindValue(id);
+    }
+    q.exec();
+}
+
+void Database::setDuration(int id, qint64 ms)
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral("UPDATE tracks SET duration_ms = ? WHERE id = ?"));
+    q.addBindValue(ms);
+    q.addBindValue(id);
+    q.exec();
+}
+
+void Database::markPlayed(int id)
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral(
+        "UPDATE tracks SET play_count = play_count + 1, last_played_at = ? WHERE id = ?"));
+    q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    q.addBindValue(id);
+    q.exec();
+}
+
+void Database::incrementPlayCount(int id)
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral(
+        "UPDATE tracks SET play_count = play_count + 1 WHERE id = ?"));
+    q.addBindValue(id);
+    q.exec();
+}
+
+QList<Track> Database::allTracks()
+{
+    QList<Track> result;
+    QSqlQuery q(QStringLiteral(
+        "SELECT t.id, t.title, t.artist, t.file_path, t.owner_playlist_id,"
+        "       t.duration_ms, t.cover_color1, t.cover_color2,"
+        "       t.liked, t.liked_at, t.added_at, t.play_count,"
+        "       t.last_played_at, t.missing,"
+        "       COALESCE(p.name, '') AS owner_name "
+        "FROM tracks t "
+        "LEFT JOIN playlists p ON p.id = t.owner_playlist_id "
+        "ORDER BY t.added_at DESC"));
+    while (q.next())
+        result.append(rowToTrack(q, 14, -1));
+    return result;
+}
+
+QList<Track> Database::tracksInPlaylist(int playlistId)
+{
+    QList<Track> result;
+    if (playlistId <= 0) return result;
+
+    QSqlQuery q;
+    q.prepare(QStringLiteral(
+        "SELECT t.id, t.title, t.artist, t.file_path, t.owner_playlist_id,"
+        "       t.duration_ms, t.cover_color1, t.cover_color2,"
+        "       t.liked, t.liked_at, t.added_at, t.play_count,"
+        "       t.last_played_at, t.missing,"
+        "       COALESCE(p.name, '') AS owner_name,"
+        "       pt.position "
+        "FROM playlist_tracks pt "
+        "JOIN tracks t ON t.id = pt.track_id "
+        "LEFT JOIN playlists p ON p.id = t.owner_playlist_id "
+        "WHERE pt.playlist_id = ? "
+        "ORDER BY pt.position, t.id"));
+    q.addBindValue(playlistId);
+    if (!q.exec()) {
+        qWarning() << "tracksInPlaylist failed:" << q.lastError().text();
+        return result;
+    }
+    while (q.next()) {
+        Track t = rowToTrack(q, 14, 15);
+        t.folderId = playlistId; // viewing context
+        result.append(t);
+    }
+    return result;
+}
+
+QList<Track> Database::tracksInPlaylistByName(const QString &name)
+{
+    const Folder f = playlistByName(name);
+    if (f.id <= 0) return {};
+    QList<Track> list = tracksInPlaylist(f.id);
+    for (auto &t : list)
+        t.folder = name;
+    return list;
+}
+
+QList<int> Database::playlistIdsForTrack(int trackId)
+{
+    QList<int> ids;
+    QSqlQuery q;
+    q.prepare(QStringLiteral(
+        "SELECT playlist_id FROM playlist_tracks WHERE track_id = ?"));
+    q.addBindValue(trackId);
+    if (q.exec()) {
+        while (q.next())
+            ids.append(q.value(0).toInt());
+    }
+    return ids;
+}
+
+// --- Membership ---------------------------------------------------------------
+
+qint64 Database::nextPositionInPlaylist(int playlistId)
+{
+    QSqlQuery q;
+    q.prepare(QStringLiteral(
+        "SELECT COALESCE(MAX(position), 0) + 1024 FROM playlist_tracks "
+        "WHERE playlist_id = ?"));
+    q.addBindValue(playlistId);
     if (q.exec() && q.next())
         return q.value(0).toLongLong();
     return 1024;
 }
 
-void Database::moveTrackToFolder(int trackId, int folderId) {
+void Database::normalisePlaylistPositions(int playlistId)
+{
+    QSqlQuery sel;
+    sel.prepare(QStringLiteral(
+        "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? "
+        "ORDER BY position, track_id"));
+    sel.addBindValue(playlistId);
+    if (!sel.exec()) return;
+
+    QList<int> ids;
+    while (sel.next())
+        ids.append(sel.value(0).toInt());
+
+    QList<QPair<int, qint64>> positions;
+    for (int i = 0; i < ids.size(); ++i)
+        positions.append(qMakePair(ids[i], static_cast<qint64>(i + 1) * 1024));
+    setPlaylistTrackPositions(playlistId, positions);
+}
+
+AddToPlaylistResult Database::addTrackToPlaylist(int trackId, int playlistId)
+{
+    AddToPlaylistResult r;
+    if (trackId <= 0 || playlistId <= 0) {
+        r.status = AddToPlaylistResult::Failed;
+        return r;
+    }
+
+    // Already a member?
+    {
+        QSqlQuery q;
+        q.prepare(QStringLiteral(
+            "SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?"));
+        q.addBindValue(playlistId);
+        q.addBindValue(trackId);
+        if (q.exec() && q.next()) {
+            r.status = AddToPlaylistResult::AlreadyPresent;
+            return r;
+        }
+    }
+
+    // Load track + owner info.
+    QString title;
+    int ownerId = 0;
+    {
+        QSqlQuery q;
+        q.prepare(QStringLiteral(
+            "SELECT title, owner_playlist_id FROM tracks WHERE id = ?"));
+        q.addBindValue(trackId);
+        if (!q.exec() || !q.next()) {
+            r.status = AddToPlaylistResult::Failed;
+            return r;
+        }
+        title = q.value(0).toString();
+        ownerId = q.value(1).isNull() ? 0 : q.value(1).toInt();
+    }
+
+    const Folder dest = playlistById(playlistId);
+    r.trackTitle = title;
+    r.destName = dest.name;
+
+    // First association: set owner (file is not moved).
+    if (ownerId == 0) {
+        QSqlQuery q;
+        q.prepare(QStringLiteral(
+            "UPDATE tracks SET owner_playlist_id = ? WHERE id = ? "
+            "AND owner_playlist_id IS NULL"));
+        q.addBindValue(playlistId);
+        q.addBindValue(trackId);
+        q.exec();
+        r.firstOwner = true;
+        ownerId = playlistId;
+    }
+
+    const qint64 pos = nextPositionInPlaylist(playlistId);
+    QSqlQuery ins;
+    ins.prepare(QStringLiteral(
+        "INSERT INTO playlist_tracks (playlist_id, track_id, position, added_at) "
+        "VALUES (?, ?, ?, ?)"));
+    ins.addBindValue(playlistId);
+    ins.addBindValue(trackId);
+    ins.addBindValue(pos);
+    ins.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    if (!ins.exec()) {
+        qWarning() << "addTrackToPlaylist insert failed:" << ins.lastError().text();
+        r.status = AddToPlaylistResult::Failed;
+        return r;
+    }
+
+    r.status = AddToPlaylistResult::Added;
+    if (ownerId > 0 && ownerId != playlistId) {
+        r.crossesOwner = true;
+        const Folder owner = playlistById(ownerId);
+        r.ownerName = owner.name;
+        r.ownerDirPath = playlistDiskPath(ownerId);
+    }
+    return r;
+}
+
+bool Database::removeTrackFromPlaylist(int trackId, int playlistId)
+{
     QSqlQuery q;
-    // Append at the end of the target playlist using the ordinal gap scale.
-    // Never write epoch-ms into position (that dual scale caused Issue #2).
-    q.prepare("UPDATE tracks SET folder_id = ?, position = ? WHERE id = ?");
-    q.addBindValue(folderId);
-    q.addBindValue(nextPositionForFolder(folderId));
+    q.prepare(QStringLiteral(
+        "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?"));
+    q.addBindValue(playlistId);
     q.addBindValue(trackId);
-    q.exec();
+    if (!q.exec())
+        return false;
+    // Owner is advisory and never cleared here — file stays where it is.
+    return true;
 }
 
-void Database::setTrackPosition(int id, qint64 position) {
-    QSqlQuery q;
-    q.prepare("UPDATE tracks SET position = ? WHERE id = ?");
-    q.addBindValue(position);
-    q.addBindValue(id);
-    q.exec();
-}
-
-void Database::setTrackPositions(const QList<QPair<int, qint64>> &positions) {
+void Database::setPlaylistTrackPositions(int playlistId,
+                                         const QList<QPair<int, qint64>> &positions)
+{
     if (positions.isEmpty()) return;
 
     QSqlDatabase db = QSqlDatabase::database();
     if (!db.transaction()) {
-        qWarning() << "setTrackPositions: BEGIN failed" << db.lastError().text();
+        qWarning() << "setPlaylistTrackPositions: BEGIN failed";
         return;
     }
 
     QSqlQuery q;
-    q.prepare(QStringLiteral("UPDATE tracks SET position = ? WHERE id = ?"));
+    q.prepare(QStringLiteral(
+        "UPDATE playlist_tracks SET position = ? "
+        "WHERE playlist_id = ? AND track_id = ?"));
     for (const auto &pair : positions) {
         q.bindValue(0, pair.second);
-        q.bindValue(1, pair.first);
+        q.bindValue(1, playlistId);
+        q.bindValue(2, pair.first);
         if (!q.exec()) {
-            qWarning() << "setTrackPositions failed:" << q.lastError().text();
+            qWarning() << "setPlaylistTrackPositions failed:" << q.lastError().text();
             db.rollback();
             return;
         }
     }
 
     if (!db.commit()) {
-        qWarning() << "setTrackPositions: COMMIT failed" << db.lastError().text();
+        qWarning() << "setPlaylistTrackPositions: COMMIT failed";
         db.rollback();
     }
 }
 
-
-Track Database::rowToTrack(const QSqlQuery &q) const {
-    Track t;
-    t.id         = q.value(0).toInt();
-    t.title      = q.value(1).toString();
-    t.artist     = q.value(2).toString();
-    t.folderId   = q.value(3).toInt();
-    t.audioUrl   = QUrl::fromLocalFile(q.value(4).toString());
-    t.durationMs = q.value(5).toLongLong();
-    t.cover.c1   = QColor(q.value(6).toString());
-    t.cover.c2   = QColor(q.value(7).toString());
-    t.liked      = q.value(8).toInt() == 1;
-    t.addedAt    = q.value(9).toLongLong();
-    t.playCount  = q.value(10).toInt();
-    t.folder     = q.value(11).toString();
-    t.lastPlayedAt = q.value(12).toLongLong();
-    t.position   = q.value(13).toLongLong();
-    return t;
-}
-
-int Database::insertTrack(const Track &t, int folderId) {
-    QSqlQuery q;
-    q.prepare(R"(
-        INSERT INTO tracks (title, artist, folder_id, file_path, cover_color1, cover_color2, position)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    )");
-    q.addBindValue(t.title);
-    q.addBindValue(t.artist);
-    q.addBindValue(folderId);
-    q.addBindValue(t.audioUrl.toLocalFile());
-    q.addBindValue(t.cover.c1.name());
-    q.addBindValue(t.cover.c2.name());
-    // Ordinal gap scale: append after the current max (never epoch-ms).
-    q.addBindValue(nextPositionForFolder(folderId));
-    q.exec();
-    return q.lastInsertId().toInt();
-}
-
-int Database::seedFakeLibrary(int n) {
+int Database::seedFakeLibrary(int n)
+{
     if (n <= 0) return 0;
 
-    // Ensure a handful of playlists exist to host the synthetic tracks.
     static const char *kNames[] = {
         "Seed A", "Seed B", "Seed C", "Seed D", "Seed E"
     };
-    int folderIds[5];
-    qint64 nextPos[5];
+    int playlistIds[5];
     for (int i = 0; i < 5; ++i) {
-        folderIds[i] = findOrCreateFolder(
+        playlistIds[i] = findOrCreatePlaylist(
             QString::fromLatin1(kNames[i]),
             QColor(QStringLiteral("#e8a44a")),
             QColor(QStringLiteral("#d45d5d")));
-        nextPos[i] = nextPositionForFolder(folderIds[i]);
     }
-
-    QSqlDatabase db = QSqlDatabase::database();
-    if (!db.transaction()) {
-        qWarning() << "seedFakeLibrary: BEGIN failed";
-        return 0;
-    }
-
-    QSqlQuery q;
-    q.prepare(QStringLiteral(
-        "INSERT INTO tracks (title, artist, folder_id, file_path, "
-        "cover_color1, cover_color2, duration_ms, position) "
-        "VALUES (?, ?, ?, ?, '#e8a44a', '#d45d5d', ?, ?)"));
 
     int inserted = 0;
     for (int i = 0; i < n; ++i) {
-        const int slot = i % 5;
-        const int folderId = folderIds[slot];
-        const qint64 pos = nextPos[slot];
-        nextPos[slot] += 1024;
-        q.bindValue(0, QStringLiteral("Fake Track %1").arg(i + 1));
-        q.bindValue(1, QStringLiteral("Fake Artist %1").arg((i % 50) + 1));
-        q.bindValue(2, folderId);
-        // Non-existent path: enough for UI/perf tests; playback will fail.
-        q.bindValue(3, QStringLiteral("C:/lumen-seed/fake_%1.opus").arg(i + 1));
-        q.bindValue(4, 180000 + (i % 120) * 1000);
-        q.bindValue(5, pos);
-        if (!q.exec()) {
-            qWarning() << "seedFakeLibrary insert failed:" << q.lastError().text();
-            db.rollback();
-            return inserted;
-        }
-        ++inserted;
-    }
-
-    if (!db.commit()) {
-        qWarning() << "seedFakeLibrary: COMMIT failed";
-        db.rollback();
-        return 0;
+        Track t;
+        t.title = QStringLiteral("Fake Track %1").arg(i + 1);
+        t.artist = QStringLiteral("Fake Artist %1").arg((i % 50) + 1);
+        t.audioUrl = QUrl::fromLocalFile(
+            QStringLiteral("C:/lumen-seed/fake_%1.opus").arg(i + 1));
+        t.durationMs = 180000 + (i % 120) * 1000;
+        t.cover = Theme::randomPalette();
+        if (insertTrack(t, playlistIds[i % 5]) > 0)
+            ++inserted;
     }
     qInfo() << "seedFakeLibrary: inserted" << inserted << "tracks";
     return inserted;
 }
 
-void Database::updateTrack(int id, const QString &title, const QString &artist) {
-    QSqlQuery q;
-    q.prepare("UPDATE tracks SET title = ?, artist = ? WHERE id = ?");
-    q.addBindValue(title);
-    q.addBindValue(artist.isEmpty() ? QString("Desconhecido") : artist);
-    q.addBindValue(id);
-    q.exec();
-}
+// --- Playback state -----------------------------------------------------------
 
-void Database::deleteTrack(int id) {
-    QSqlQuery q;
-    q.prepare("DELETE FROM tracks WHERE id = ?");
-    q.addBindValue(id);
-    q.exec();
-}
-
-void Database::setLiked(int id, bool liked) {
-    QSqlQuery q;
-    q.prepare("UPDATE tracks SET liked = ? WHERE id = ?");
-    q.addBindValue(liked ? 1 : 0);
-    q.addBindValue(id);
-    q.exec();
-}
-
-void Database::setDuration(int id, qint64 ms) {
-    QSqlQuery q;
-    q.prepare("UPDATE tracks SET duration_ms = ? WHERE id = ?");
-    q.addBindValue(ms);
-    q.addBindValue(id);
-    q.exec();
-}
-
-void Database::markPlayed(int id) {
-    QSqlQuery q;
-    q.prepare("UPDATE tracks SET play_count = play_count + 1, last_played_at = ? WHERE id = ?");
-    q.addBindValue(QDateTime::currentMSecsSinceEpoch());
-    q.addBindValue(id);
-    q.exec();
-}
-
-void Database::incrementPlayCount(int id) {
-    QSqlQuery q;
-    q.prepare("UPDATE tracks SET play_count = play_count + 1 WHERE id = ?");
-    q.addBindValue(id);
-    q.exec();
-}
-
-QList<Track> Database::allTracks() {
-    QList<Track> result;
-    QSqlQuery q(R"(
-        SELECT t.id, t.title, t.artist, t.folder_id, t.file_path,
-               t.duration_ms, t.cover_color1, t.cover_color2,
-               t.liked, t.added_at, t.play_count,
-               COALESCE(f.name, '') AS folder_name,
-               t.last_played_at, t.position
-        FROM   tracks t
-        LEFT JOIN folders f ON f.id = t.folder_id
-        ORDER  BY t.added_at DESC
-    )");
-    while (q.next()) result.append(rowToTrack(q));
-    return result;
-}
-
-
-Database::PlaybackState Database::loadState() {
+Database::PlaybackState Database::loadState()
+{
     PlaybackState s;
-    QSqlQuery q("SELECT current_track_id, position_ms, volume, shuffle, repeat_mode "
-                "FROM playback_state WHERE id = 1");
+    QSqlQuery q(QStringLiteral(
+        "SELECT current_track_id, position_ms, volume, shuffle, repeat_mode "
+        "FROM playback_state WHERE id = 1"));
     if (q.next()) {
         s.trackId = q.value(0).toInt();
         s.posMs   = q.value(1).toLongLong();
@@ -459,13 +800,14 @@ Database::PlaybackState Database::loadState() {
     return s;
 }
 
-void Database::saveState(const PlaybackState &s) {
+void Database::saveState(const PlaybackState &s)
+{
     QSqlQuery q;
-    q.prepare(R"(
-        UPDATE playback_state
-        SET current_track_id = ?, position_ms = ?, volume = ?, shuffle = ?, repeat_mode = ?
-        WHERE id = 1
-    )");
+    q.prepare(QStringLiteral(
+        "UPDATE playback_state "
+        "SET current_track_id = ?, position_ms = ?, volume = ?, "
+        "    shuffle = ?, repeat_mode = ? "
+        "WHERE id = 1"));
     q.addBindValue(s.trackId);
     q.addBindValue(s.posMs);
     q.addBindValue(s.volume);

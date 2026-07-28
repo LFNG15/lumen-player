@@ -1,4 +1,5 @@
 #include "importplaylistdialog.h"
+#include "database.h"
 #include "lang.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -526,7 +527,7 @@ void ImportPlaylistDialog::downloadNext() {
 
     // Each playlist gets its own subfolder under the downloads root, so the
     // files are easy to find afterwards.
-    const QString outDir = MediaTools::playlistDir(m_playlistName);
+    const QString outDir = Database::instance().playlistDiskPathByName(m_playlistName);
     m_downloadPrefix = QString("%1_%2").arg(QDateTime::currentMSecsSinceEpoch()).arg(index);
     const QString outTemplate = outDir + "/" + m_downloadPrefix + "_%(title)s.%(ext)s";
 

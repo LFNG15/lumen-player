@@ -182,6 +182,29 @@ MainWindow::MainWindow(QWidget *parent)
         showToast(Lang::tr("Adicionado à fila"));
     });
 
+    // Decision 7: non-blocking owner notice when a track is referenced by
+    // another playlist (file is never copied or moved).
+    connect(m_model, &TrackModel::ownerNotice, this, [this](const AddToPlaylistResult &r) {
+        QSettings s;
+        if (s.value(QStringLiteral("notices/ownerExplained"), false).toBool()
+            && !r.crossesOwner) {
+            return; // first-owner toast suppressible after user dismisses once
+        }
+        QString msg;
+        if (r.crossesOwner) {
+            msg = Lang::tr("«%1» foi adicionada a %2. O arquivo não foi duplicado — ele permanece na pasta de %3.")
+                      .arg(r.trackTitle, r.destName, r.ownerName);
+        } else if (r.firstOwner) {
+            msg = Lang::tr("«%1» foi adicionada a %2. O arquivo permanece na pasta geral do Lumen Music.")
+                      .arg(r.trackTitle, r.destName);
+        } else {
+            return;
+        }
+        showToast(msg);
+        // Remember that the user has seen the explanation.
+        s.setValue(QStringLiteral("notices/ownerExplained"), true);
+    });
+
     // Liked page
     connect(m_likedPage, &LikedPage::playRequested, this, &MainWindow::onTrackPlay);
     connect(m_likedPage, &LikedPage::likeToggled, this, [this](int id) {

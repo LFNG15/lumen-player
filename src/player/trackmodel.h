@@ -9,19 +9,34 @@
 #include <QColor>
 #include "theme.h"
 
+// Result of adding a track to a playlist (decision 7 — owner notice).
+struct AddToPlaylistResult {
+    enum Status { Added, AlreadyPresent, Failed } status = Failed;
+    bool    crossesOwner = false;  // dest != owner, and owner exists
+    bool    firstOwner   = false;  // was standalone; owner just set (file stays put)
+    QString trackTitle;
+    QString destName;
+    QString ownerName;
+    QString ownerDirPath;          // on-disk folder of the owner playlist
+};
+
 struct Track {
     int     id        = 0;
     QString title;
     QString artist;
+    // Display helpers: owner playlist name / id (0 = none). Not unique membership.
     QString folder;
     int     folderId  = 0;
+    int     ownerPlaylistId = 0;
     qint64  durationMs = 0;
     int     playCount  = 0;
     Theme::GradientPair cover;
     bool    liked     = false;
+    qint64  likedAt   = 0;
     qint64  addedAt   = 0;
     qint64  lastPlayedAt = 0;
-    qint64  position  = 0;   // order within its playlist
+    qint64  position  = 0;   // order within a playlist context (from playlist_tracks)
+    bool    missing   = false;
     QUrl    audioUrl;
 
     static Track create(const QString &title, const QString &artist,
@@ -42,6 +57,8 @@ struct Folder {
     QString name;
     Theme::GradientPair cover;
     QString coverImage;   // absolute path to a cover image; empty = use gradient
+    QString dirName;      // on-disk folder name (stable across renames)
+    QString sortMode = QStringLiteral("custom");
 };
 
 class TrackModel : public QObject {
@@ -51,6 +68,9 @@ public:
 
     QList<Track> &tracks();
     const QList<Track> &tracks() const;
+
+    // Reload library + membership from the database.
+    void reload();
 
     int  addTrack(const Track &track);   // returns the new track's library id
     void removeTrack(int id);
@@ -66,7 +86,6 @@ public:
     QList<Track> likedTracks() const;
     QList<Track> recentTracks(int count = 8) const;
     QList<Track> recentlyPlayed(int count = 8) const;
-    // Playlists ordered by when one of their tracks was last played.
     QList<Folder> recentlyPlayedFolders(int count = 6) const;
 
     // Playlist CRUD
@@ -76,14 +95,22 @@ public:
     void updatePlaylistCover(int id, const QColor &c1, const QColor &c2);
     void updatePlaylistCoverImage(int id, const QString &sourcePath);
     void deletePlaylist(int id);
-    void moveTrackToPlaylist(int trackId, int playlistId, const QString &playlistName);
+
+    // N:N membership (replaces moveTrackToPlaylist).
+    AddToPlaylistResult addTrackToPlaylist(int trackId, int playlistId);
+    bool removeTrackFromPlaylist(int trackId, int playlistId);
+    QList<int> playlistIdsForTrack(int trackId) const;
+
     void reorderPlaylist(const QString &folderName, const QList<int> &orderedTrackIds);
+    void reorderPlaylist(int playlistId, const QList<int> &orderedTrackIds);
 
     int nextIndex(int currentIndex, bool shuffle) const;
     int prevIndex(int currentIndex) const;
 
 signals:
     void tracksChanged();
+    // Fired when a track is added to a second playlist (decision 7).
+    void ownerNotice(const AddToPlaylistResult &result);
 
 private:
     QList<Track> m_tracks;

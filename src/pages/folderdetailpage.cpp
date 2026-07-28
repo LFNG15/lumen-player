@@ -1,5 +1,6 @@
 #include "design/stylesheet.h"
 #include "folderdetailpage.h"
+#include "database.h"
 #include "lang.h"
 #include <QLabel>
 #include <QPushButton>
@@ -87,6 +88,8 @@ static void applySortMode(QList<Track> &tracks, const QString &mode) {
 }
 
 QString FolderDetailPage::sortMode() const {
+    if (m_folderId > 0)
+        return Database::instance().playlistSortMode(m_folderId);
     return QSettings().value(QString("playlistSort/%1").arg(m_folderId), "custom").toString();
 }
 
@@ -426,7 +429,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying) {
         moveBtn->setFixedSize(28, 28);
         moveBtn->setCursor(Qt::PointingHandCursor);
         moveBtn->setFont(Theme::iconFont(11));
-        moveBtn->setToolTip(isStandalone ? Lang::tr("Adicionar à playlist") : Lang::tr("Mover para outra playlist"));
+        moveBtn->setToolTip(Lang::tr("Adicionar à playlist"));
         lumen::design::StyleSheet::apply(moveBtn, QString(
             "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
             "QPushButton:hover { color: %2; }"
@@ -535,7 +538,10 @@ void FolderDetailPage::showSortMenu() {
         if (current == m.id) label = "✓ " + label;
         QString id = m.id;
         menu->addAction(label, [this, id]() {
-            QSettings().setValue(QString("playlistSort/%1").arg(m_folderId), id);
+            if (m_folderId > 0)
+                Database::instance().setPlaylistSortMode(m_folderId, id);
+            else
+                QSettings().setValue(QString("playlistSort/%1").arg(m_folderId), id);
             refresh(m_lastCurrentId, m_lastPlaying);
         });
     }
@@ -728,7 +734,9 @@ void FolderDetailPage::showEditDialog() {
 }
 
 void FolderDetailPage::showMoveDialog(int trackId) {
+    // "Adicionar a playlist" with checkable membership (N:N, decision 2).
     auto playlists = m_model->folders();
+    const QList<int> memberOf = m_model->playlistIdsForTrack(trackId);
 
     auto *menu = new QMenu(this);
     lumen::design::StyleSheet::apply(menu, QString(
@@ -738,25 +746,34 @@ void FolderDetailPage::showMoveDialog(int trackId) {
         "QMenu::separator { height: 1px; background: %2; margin: 4px 0; }"
     ).arg(Theme::card().name(), Theme::border().name(), Theme::text().name(), Theme::cardHover().name()));
 
+    auto *header = menu->addAction(Lang::tr("Adicionar à playlist"));
+    header->setEnabled(false);
+    menu->addSeparator();
+
     bool addedAny = false;
     for (auto &f : playlists) {
-        if (f.id == m_folderId) continue;
-        QString targetName = f.name;
-        int targetId = f.id;
-        menu->addAction(f.name, [this, trackId, targetId, targetName]() {
-            m_model->moveTrackToPlaylist(trackId, targetId, targetName);
+        const bool isMember = memberOf.contains(f.id);
+        auto *act = menu->addAction(f.name);
+        act->setCheckable(true);
+        act->setChecked(isMember);
+        const int targetId = f.id;
+        connect(act, &QAction::triggered, this, [this, trackId, targetId, isMember](bool) {
+            if (isMember)
+                m_model->removeTrackFromPlaylist(trackId, targetId);
+            else
+                m_model->addTrackToPlaylist(trackId, targetId);
         });
         addedAny = true;
     }
 
-    if (m_folderId != 0) {
+    if (m_folderId != 0 && memberOf.contains(m_folderId)) {
         if (addedAny) menu->addSeparator();
         menu->addAction(Lang::tr("Remover da playlist"), [this, trackId]() {
-            m_model->moveTrackToPlaylist(trackId, 0, "");
+            m_model->removeTrackFromPlaylist(trackId, m_folderId);
         });
     }
 
-    if (menu->actions().isEmpty()) {
+    if (!addedAny) {
         menu->addAction(Lang::tr("Nenhuma playlist disponível"))->setEnabled(false);
     }
 

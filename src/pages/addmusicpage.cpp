@@ -1,5 +1,6 @@
 #include "design/stylesheet.h"
 #include "addmusicpage.h"
+#include "database.h"
 #include "lang.h"
 #include <QLabel>
 #include <QFileDialog>
@@ -716,7 +717,10 @@ void AddMusicPage::addAllToLibrary() {
     // playlist's subfolder, so each playlist's music stays together on disk.
     // Files the user picked from elsewhere are never moved.
     const QString downloadsRoot = QDir(MediaTools::downloadDir()).absolutePath();
-    const QString playlistFolder = folder.isEmpty() ? QString() : MediaTools::playlistDir(folder);
+    // Prefer dir_name from the DB (stable across renames); fall back to sanitize(name).
+    const QString playlistFolder = folder.isEmpty()
+        ? QString()
+        : Database::instance().playlistDiskPathByName(folder);
 
     for (auto &pf : m_pendingFiles) {
         QString path = pf.filePath;

@@ -184,6 +184,10 @@ const QHash<QString, QString> &enDict()
         {QStringLiteral("Densidade"), QStringLiteral("Density")},
         {QStringLiteral("Confortável"), QStringLiteral("Comfortable")},
         {QStringLiteral("Reduzir movimento"), QStringLiteral("Reduce motion")},
+        {QStringLiteral("«%1» foi adicionada a %2. O arquivo não foi duplicado — ele permanece na pasta de %3."),
+         QStringLiteral("«%1» was added to %2. The file was not duplicated — it remains in %3's folder.")},
+        {QStringLiteral("«%1» foi adicionada a %2. O arquivo permanece na pasta geral do Lumen Music."),
+         QStringLiteral("«%1» was added to %2. The file remains in the general Lumen Music folder.")},
     };
     return en;
 }

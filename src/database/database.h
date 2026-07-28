@@ -4,6 +4,7 @@
 #include <QString>
 #include <QList>
 #include <QPair>
+#include <QColor>
 #include "trackmodel.h"
 
 class Database {
@@ -13,37 +14,64 @@ public:
     bool open();
     QString lastError() const { return m_lastError; }
 
-    int  findOrCreateFolder(const QString &name, const QColor &c1, const QColor &c2);
-    int  createFolder(const QString &name, const QColor &c1, const QColor &c2,
-                      const QString &coverImage = QString());
-    QList<Folder> allFolders();
-    void renameFolder(int id, const QString &newName);
-    void updateFolderCover(int id, const QColor &c1, const QColor &c2);
-    void updateFolderCoverImage(int id, const QString &imagePath);
-    void deleteFolder(int id);
+    // --- Playlists (table: playlists) ---
+    int  findOrCreatePlaylist(const QString &name, const QColor &c1, const QColor &c2);
+    int  createPlaylist(const QString &name, const QColor &c1, const QColor &c2,
+                        const QString &coverImage = QString());
+    QList<Folder> allPlaylists();
+    Folder playlistById(int id);
+    Folder playlistByName(const QString &name);
+    void renamePlaylist(int id, const QString &newName);  // does NOT change dir_name
+    void updatePlaylistCover(int id, const QColor &c1, const QColor &c2);
+    void updatePlaylistCoverImage(int id, const QString &imagePath);
+    void deletePlaylist(int id);  // CASCADE membership; owner_playlist_id → NULL
+    void setPlaylistSortMode(int id, const QString &mode);
+    QString playlistSortMode(int id) const;
+    // Absolute on-disk directory for the playlist (downloadDir/dir_name).
+    QString playlistDiskPath(int id) const;
+    QString playlistDiskPathByName(const QString &name) const;
 
-    // Copies a chosen image into the app's covers/ directory and returns the
-    // stored path (empty input yields an empty result).
+    // Legacy aliases used by older call sites during the transition.
+    int  findOrCreateFolder(const QString &name, const QColor &c1, const QColor &c2)
+    { return findOrCreatePlaylist(name, c1, c2); }
+    int  createFolder(const QString &name, const QColor &c1, const QColor &c2,
+                      const QString &coverImage = QString())
+    { return createPlaylist(name, c1, c2, coverImage); }
+    QList<Folder> allFolders() { return allPlaylists(); }
+    void renameFolder(int id, const QString &newName) { renamePlaylist(id, newName); }
+    void updateFolderCover(int id, const QColor &c1, const QColor &c2)
+    { updatePlaylistCover(id, c1, c2); }
+    void updateFolderCoverImage(int id, const QString &imagePath)
+    { updatePlaylistCoverImage(id, imagePath); }
+    void deleteFolder(int id) { deletePlaylist(id); }
+
     static QString importCoverImage(const QString &sourcePath);
 
-    int  insertTrack(const Track &t, int folderId);
+    // --- Tracks ---
+    // Insert a library track. If playlistId > 0, also adds membership and may
+    // set owner_playlist_id when the track is new.
+    int  insertTrack(const Track &t, int playlistId = 0);
     void updateTrack(int id, const QString &title, const QString &artist);
     void deleteTrack(int id);
     void setLiked(int id, bool liked);
     void setDuration(int id, qint64 ms);
-    void markPlayed(int id);          // bumps play_count and last_played_at
+    void markPlayed(int id);
     void incrementPlayCount(int id);
-    void setTrackPosition(int id, qint64 position);
-    // Batch update of positions inside a single transaction (gap scale).
-    void setTrackPositions(const QList<QPair<int, qint64>> &positions);
-    // Next append position for a folder: COALESCE(MAX(position),0) + 1024.
-    qint64 nextPositionForFolder(int folderId);
-    void moveTrackToFolder(int trackId, int folderId);
     QList<Track> allTracks();
+    QList<Track> tracksInPlaylist(int playlistId);
+    QList<Track> tracksInPlaylistByName(const QString &name);
+    QList<int>  playlistIdsForTrack(int trackId);
 
-    // Debug / CI helpers (P0.b)
-    // Populate the open DB with N synthetic tracks across a few playlists.
-    // Returns the number of tracks inserted. No-op if N <= 0.
+    // --- Membership (playlist_tracks) ---
+    AddToPlaylistResult addTrackToPlaylist(int trackId, int playlistId);
+    bool removeTrackFromPlaylist(int trackId, int playlistId);
+    // Batch-write positions for one playlist (gap scale). pairs: (trackId, position)
+    void setPlaylistTrackPositions(int playlistId,
+                                   const QList<QPair<int, qint64>> &positions);
+    qint64 nextPositionInPlaylist(int playlistId);
+    void normalisePlaylistPositions(int playlistId);
+
+    // Debug / CI
     int seedFakeLibrary(int n);
 
     struct PlaybackState {
@@ -62,7 +90,11 @@ private:
     Database &operator=(const Database &) = delete;
 
     void  applySchema();
-    Track rowToTrack(const class QSqlQuery &q) const;
+    void  ensureLegacySchema();
+    void  ensureV2Schema();
+    bool  tableExists(const QString &name) const;
+    Track rowToTrack(const class QSqlQuery &q, int ownerNameCol = -1,
+                     int positionCol = -1) const;
 
     QString m_lastError;
 };
