@@ -193,44 +193,79 @@ if(EXISTS "${YTDLP_SRC}")
 endif()
 
 # --- Install + self-contained deployment ------------------------------------
-# Flat layout for a portable Windows app: LumenMusic.exe + Qt DLLs at the top,
-# plugins in subfolders. yt-dlp sits next to the exe (where the app looks).
-install(TARGETS LumenMusic RUNTIME DESTINATION ".")
+# Flat layout for the Inno Setup tree (installer/lumen-music.iss):
+#   dist/LumenMusic/LumenMusic.exe + Qt DLLs + plugins/ + yt-dlp.exe
+#
+# Config-aware windeployqt: never hardcode --release (a Debug install would
+# otherwise ship the wrong Qt DLLs — Task.md P7). Paths are resolved to
+# absolute inside install(CODE) so relative --prefix still works.
+set(CMAKE_INSTALL_BINDIR ".")
+
+install(TARGETS LumenMusic
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    BUNDLE  DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 if(EXISTS "${YTDLP_SRC}")
-    install(FILES "${YTDLP_SRC}" DESTINATION ".")
+    install(FILES "${YTDLP_SRC}" DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-# Run windeployqt at install time so `cmake --install` / `cpack` produce a tree
-# that runs on a machine without Qt. Deploys flat next to the exe (the layout
-# the Inno Setup installer expects) instead of Qt's structured bin/ layout.
 if(WIN32)
+    # MSVC: ship the VC++ redistributable DLLs (--compiler-runtime is MinGW-only).
+    # Flat next to the exe (not bin/), matching the Inno tree.
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ${CMAKE_INSTALL_BINDIR})
+    include(InstallRequiredSystemLibraries)
+
     get_filename_component(_qt_root "${Qt6_DIR}/../../.." ABSOLUTE)
     find_program(WINDEPLOYQT_EXECUTABLE NAMES windeployqt HINTS "${_qt_root}/bin")
     if(NOT WINDEPLOYQT_EXECUTABLE)
         message(FATAL_ERROR "windeployqt not found near ${_qt_root}/bin")
     endif()
 
-    # MSVC: --compiler-runtime is a MinGW concept. Ship the VC++ redistributable
-    # DLLs via InstallRequiredSystemLibraries instead.
-    include(InstallRequiredSystemLibraries)
-    if(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
-        install(PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION ".")
+    # Also expose a post-build convenience for local dev (does not replace install).
+    if(COMMAND qt_generate_deploy_app_script)
+        message(STATUS "Deploy: windeployqt (flat Inno layout); qt_generate_deploy_app_script available but skipped for flat prefix")
     endif()
 
     install(CODE "
-        message(STATUS \"Deploying Qt runtime with windeployqt...\")
+        # Resolve prefix to an absolute path — required by windeployqt/qt.conf.
+        get_filename_component(_prefix \"\${CMAKE_INSTALL_PREFIX}\" ABSOLUTE)
+        set(_exe \"\${_prefix}/LumenMusic.exe\")
+        if(NOT EXISTS \"\${_exe}\")
+            message(FATAL_ERROR \"Deploy target missing: \${_exe}\")
+        endif()
+
         set(_deploy_flag --release)
         if(CMAKE_INSTALL_CONFIG_NAME STREQUAL \"Debug\")
             set(_deploy_flag --debug)
         endif()
-        execute_process(COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
-            \${_deploy_flag}
-            --no-translations --no-system-d3d-compiler
-            \"\${CMAKE_INSTALL_PREFIX}/LumenMusic.exe\"
-            RESULT_VARIABLE _rc)
+
+        message(STATUS \"Deploying Qt runtime (\${_deploy_flag}) to \${_prefix}...\")
+        execute_process(
+            COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
+                \${_deploy_flag}
+                --no-translations
+                --no-system-d3d-compiler
+                --dir \"\${_prefix}\"
+                \"\${_exe}\"
+            RESULT_VARIABLE _rc
+            OUTPUT_VARIABLE _out
+            ERROR_VARIABLE _err)
         if(NOT _rc EQUAL 0)
-            message(FATAL_ERROR \"windeployqt failed (\${_rc})\")
+            message(FATAL_ERROR \"windeployqt failed (\${_rc}):\n\${_out}\n\${_err}\")
         endif()
+
+        # Gate: multimedia FFmpeg backend + SQLite driver must be present.
+        set(_ffmpeg \"\${_prefix}/plugins/multimedia/ffmpegmediaplugin.dll\")
+        set(_ffmpeg_alt \"\${_prefix}/multimedia/ffmpegmediaplugin.dll\")
+        set(_sqlite \"\${_prefix}/plugins/sqldrivers/qsqlite.dll\")
+        set(_sqlite_alt \"\${_prefix}/sqldrivers/qsqlite.dll\")
+        if(NOT EXISTS \"\${_ffmpeg}\" AND NOT EXISTS \"\${_ffmpeg_alt}\")
+            message(FATAL_ERROR \"Deploy missing ffmpegmediaplugin.dll under \${_prefix}\")
+        endif()
+        if(NOT EXISTS \"\${_sqlite}\" AND NOT EXISTS \"\${_sqlite_alt}\")
+            message(FATAL_ERROR \"Deploy missing qsqlite.dll under \${_prefix}\")
+        endif()
+        message(STATUS \"Deploy OK: ffmpeg + sqlite plugins present\")
     ")
 endif()
 
