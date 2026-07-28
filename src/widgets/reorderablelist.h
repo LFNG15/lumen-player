@@ -30,6 +30,11 @@ protected:
             if (from < to) to -= 1;                 // removing 'from' shifts indices
         }
         to = qBound(0, to, count() - 1);
+        // IgnoreAction: we handle the reorder ourselves via moveRequested.
+        // Without this, accept()+MoveAction makes QAbstractItemView::startDrag
+        // call clearOrRemove() and delete the source row (masked today only
+        // because FolderDetailPage::refresh() rebuilds the whole list).
+        event->setDropAction(Qt::IgnoreAction);
         event->accept();
         if (to != from) emit moveRequested(from, to);
     }

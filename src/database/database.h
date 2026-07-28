@@ -2,6 +2,8 @@
 #define DATABASE_H
 
 #include <QString>
+#include <QList>
+#include <QPair>
 #include "trackmodel.h"
 
 class Database {
@@ -32,8 +34,17 @@ public:
     void markPlayed(int id);          // bumps play_count and last_played_at
     void incrementPlayCount(int id);
     void setTrackPosition(int id, qint64 position);
+    // Batch update of positions inside a single transaction (gap scale).
+    void setTrackPositions(const QList<QPair<int, qint64>> &positions);
+    // Next append position for a folder: COALESCE(MAX(position),0) + 1024.
+    qint64 nextPositionForFolder(int folderId);
     void moveTrackToFolder(int trackId, int folderId);
     QList<Track> allTracks();
+
+    // Debug / CI helpers (P0.b)
+    // Populate the open DB with N synthetic tracks across a few playlists.
+    // Returns the number of tracks inserted. No-op if N <= 0.
+    int seedFakeLibrary(int n);
 
     struct PlaybackState {
         int    trackId  = 0;

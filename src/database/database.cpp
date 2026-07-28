@@ -1,4 +1,5 @@
 #include "database.h"
+#include "migrator.h"
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
@@ -8,6 +9,7 @@
 #include <QFileInfo>
 #include <QDateTime>
 #include <QDebug>
+#include <QColor>
 
 Database &Database::instance() {
     static Database db;
@@ -15,11 +17,19 @@ Database &Database::instance() {
 }
 
 bool Database::open() {
+    // Idempotent: TrackModel and CLI flags (--seed / --selftest) may both call open().
+    if (QSqlDatabase::contains(QSqlDatabase::defaultConnection)
+        && QSqlDatabase::database().isOpen()) {
+        return true;
+    }
+
     QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(dir);
 
+    const QString dbPath = dir + QStringLiteral("/vinil.db");
+
     QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
-    db.setDatabaseName(dir + "/vinil.db");
+    db.setDatabaseName(dbPath);
 
     if (!db.open()) {
         m_lastError = db.lastError().text();
@@ -28,6 +38,16 @@ bool Database::open() {
     }
 
     applySchema();
+
+    // Versioned migrations (P0b+). On failure refuse to run — a half-migrated
+    // library is worse than an app that will not open.
+    if (!lumen::Migrator::run(db, dbPath)) {
+        m_lastError = lumen::Migrator::lastError();
+        qCritical() << "Database migration failed:" << m_lastError
+                    << "backup:" << lumen::Migrator::lastBackupPath();
+        return false;
+    }
+
     return true;
 }
 
@@ -74,8 +94,12 @@ void Database::applySchema() {
     // Each fails harmlessly when the column is already present.
     q.exec("ALTER TABLE tracks ADD COLUMN last_played_at INTEGER NOT NULL DEFAULT 0");
     q.exec("ALTER TABLE tracks ADD COLUMN position INTEGER NOT NULL DEFAULT 0");
-    // Seed positions with added_at so existing playlists keep a stable order.
-    q.exec("UPDATE tracks SET position = added_at WHERE position = 0");
+    // Issue #2 fix (P0b): the old one-shot
+    //   UPDATE tracks SET position = added_at WHERE position = 0
+    // ran on EVERY boot and destroyed custom playlist order (any track dragged
+    // to the top got position=0 and was rewritten to epoch-ms on next launch).
+    // Position scale is now unified by Migrator (user_version ≥ 1): ordinal
+    // gaps of 1024 starting at 1024. 0 is never a valid position again.
 
     q.exec("CREATE INDEX IF NOT EXISTS idx_tracks_folder ON tracks(folder_id)");
     q.exec("CREATE INDEX IF NOT EXISTS idx_tracks_liked  ON tracks(liked) WHERE liked = 1");
@@ -204,12 +228,23 @@ void Database::deleteFolder(int id) {
     q.exec();
 }
 
+qint64 Database::nextPositionForFolder(int folderId) {
+    QSqlQuery q;
+    q.prepare(QStringLiteral(
+        "SELECT COALESCE(MAX(position), 0) + 1024 FROM tracks WHERE folder_id = ?"));
+    q.addBindValue(folderId);
+    if (q.exec() && q.next())
+        return q.value(0).toLongLong();
+    return 1024;
+}
+
 void Database::moveTrackToFolder(int trackId, int folderId) {
     QSqlQuery q;
-    // New position lands the track at the end of the target playlist.
+    // Append at the end of the target playlist using the ordinal gap scale.
+    // Never write epoch-ms into position (that dual scale caused Issue #2).
     q.prepare("UPDATE tracks SET folder_id = ?, position = ? WHERE id = ?");
     q.addBindValue(folderId);
-    q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    q.addBindValue(nextPositionForFolder(folderId));
     q.addBindValue(trackId);
     q.exec();
 }
@@ -220,6 +255,33 @@ void Database::setTrackPosition(int id, qint64 position) {
     q.addBindValue(position);
     q.addBindValue(id);
     q.exec();
+}
+
+void Database::setTrackPositions(const QList<QPair<int, qint64>> &positions) {
+    if (positions.isEmpty()) return;
+
+    QSqlDatabase db = QSqlDatabase::database();
+    if (!db.transaction()) {
+        qWarning() << "setTrackPositions: BEGIN failed" << db.lastError().text();
+        return;
+    }
+
+    QSqlQuery q;
+    q.prepare(QStringLiteral("UPDATE tracks SET position = ? WHERE id = ?"));
+    for (const auto &pair : positions) {
+        q.bindValue(0, pair.second);
+        q.bindValue(1, pair.first);
+        if (!q.exec()) {
+            qWarning() << "setTrackPositions failed:" << q.lastError().text();
+            db.rollback();
+            return;
+        }
+    }
+
+    if (!db.commit()) {
+        qWarning() << "setTrackPositions: COMMIT failed" << db.lastError().text();
+        db.rollback();
+    }
 }
 
 
@@ -254,10 +316,69 @@ int Database::insertTrack(const Track &t, int folderId) {
     q.addBindValue(t.audioUrl.toLocalFile());
     q.addBindValue(t.cover.c1.name());
     q.addBindValue(t.cover.c2.name());
-    // Timestamp position keeps new tracks at the end until manually reordered.
-    q.addBindValue(QDateTime::currentMSecsSinceEpoch());
+    // Ordinal gap scale: append after the current max (never epoch-ms).
+    q.addBindValue(nextPositionForFolder(folderId));
     q.exec();
     return q.lastInsertId().toInt();
+}
+
+int Database::seedFakeLibrary(int n) {
+    if (n <= 0) return 0;
+
+    // Ensure a handful of playlists exist to host the synthetic tracks.
+    static const char *kNames[] = {
+        "Seed A", "Seed B", "Seed C", "Seed D", "Seed E"
+    };
+    int folderIds[5];
+    qint64 nextPos[5];
+    for (int i = 0; i < 5; ++i) {
+        folderIds[i] = findOrCreateFolder(
+            QString::fromLatin1(kNames[i]),
+            QColor(QStringLiteral("#e8a44a")),
+            QColor(QStringLiteral("#d45d5d")));
+        nextPos[i] = nextPositionForFolder(folderIds[i]);
+    }
+
+    QSqlDatabase db = QSqlDatabase::database();
+    if (!db.transaction()) {
+        qWarning() << "seedFakeLibrary: BEGIN failed";
+        return 0;
+    }
+
+    QSqlQuery q;
+    q.prepare(QStringLiteral(
+        "INSERT INTO tracks (title, artist, folder_id, file_path, "
+        "cover_color1, cover_color2, duration_ms, position) "
+        "VALUES (?, ?, ?, ?, '#e8a44a', '#d45d5d', ?, ?)"));
+
+    int inserted = 0;
+    for (int i = 0; i < n; ++i) {
+        const int slot = i % 5;
+        const int folderId = folderIds[slot];
+        const qint64 pos = nextPos[slot];
+        nextPos[slot] += 1024;
+        q.bindValue(0, QStringLiteral("Fake Track %1").arg(i + 1));
+        q.bindValue(1, QStringLiteral("Fake Artist %1").arg((i % 50) + 1));
+        q.bindValue(2, folderId);
+        // Non-existent path: enough for UI/perf tests; playback will fail.
+        q.bindValue(3, QStringLiteral("C:/lumen-seed/fake_%1.opus").arg(i + 1));
+        q.bindValue(4, 180000 + (i % 120) * 1000);
+        q.bindValue(5, pos);
+        if (!q.exec()) {
+            qWarning() << "seedFakeLibrary insert failed:" << q.lastError().text();
+            db.rollback();
+            return inserted;
+        }
+        ++inserted;
+    }
+
+    if (!db.commit()) {
+        qWarning() << "seedFakeLibrary: COMMIT failed";
+        db.rollback();
+        return 0;
+    }
+    qInfo() << "seedFakeLibrary: inserted" << inserted << "tracks";
+    return inserted;
 }
 
 void Database::updateTrack(int id, const QString &title, const QString &artist) {

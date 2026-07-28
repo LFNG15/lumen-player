@@ -2,6 +2,7 @@
 #include "database.h"
 #include "mediatools.h"
 #include <QRandomGenerator>
+#include <QPair>
 #include <algorithm>
 
 TrackModel::TrackModel(QObject *parent) : QObject(parent) {
@@ -216,11 +217,17 @@ void TrackModel::moveTrackToPlaylist(int trackId, int playlistId, const QString 
 
 void TrackModel::reorderPlaylist(const QString &folderName, const QList<int> &orderedTrackIds) {
     Q_UNUSED(folderName);
+    // Gap scale: rank 0 → 1024, rank 1 → 2048, … so 0 is never a valid
+    // position (Issue #2). Single transaction via setTrackPositions.
+    QList<QPair<int, qint64>> positions;
+    positions.reserve(orderedTrackIds.size());
     for (int i = 0; i < orderedTrackIds.size(); ++i) {
-        Database::instance().setTrackPosition(orderedTrackIds[i], i);
+        const qint64 pos = static_cast<qint64>(i + 1) * 1024;
+        positions.append(qMakePair(orderedTrackIds[i], pos));
         for (auto &t : m_tracks)
-            if (t.id == orderedTrackIds[i]) { t.position = i; break; }
+            if (t.id == orderedTrackIds[i]) { t.position = pos; break; }
     }
+    Database::instance().setTrackPositions(positions);
     emit tracksChanged();
 }
 
