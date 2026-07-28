@@ -1060,7 +1060,9 @@ void MainWindow::showToast(const QString &text) {
     repositionToast();
     m_toast->show();
     m_toast->raise();
-    m_toastTimer->start(1800);
+    // Respect reduce-motion: 0 ms hides immediately (still flashes once).
+    const int toastMs = lumen::design::ThemeManager::motion().d(1800);
+    m_toastTimer->start(toastMs > 0 ? toastMs : 1);
 }
 
 void MainWindow::repositionToast() {

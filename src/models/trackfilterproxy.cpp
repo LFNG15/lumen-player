@@ -11,7 +11,9 @@ void TrackFilterProxy::setNeedle(const QString &normalizedNeedle)
 {
     if (m_needle == normalizedNeedle) return;
     m_needle = normalizedNeedle;
-    invalidateFilter();
+    // Qt 6.10+: begin/endFilterChange avoids the deprecated invalidateFilter().
+    beginFilterChange();
+    endFilterChange();
 }
 
 bool TrackFilterProxy::filterAcceptsRow(int sourceRow,

@@ -7,6 +7,9 @@
 #include <QUrl>
 #include <QDateTime>
 #include <QColor>
+#include <QHash>
+#include <QVector>
+#include <QSet>
 #include "theme.h"
 
 // Result of adding a track to a playlist (decision 7 — owner notice).
@@ -113,7 +116,23 @@ signals:
     void ownerNotice(const AddToPlaylistResult &result);
 
 private:
+    void rebuildIndexes();
+    void invalidatePlaylistCache() const;
+    void ensurePlaylistCache() const;
+    void ensureMembershipCache() const;
+
     QList<Track> m_tracks;
+    // id → index in m_tracks — O(1) findTrack (P6; was linear scan).
+    QHash<int, int> m_idIndex;
+
+    // Cached playlists — folders() used to hit SQL on every call inside loops.
+    mutable QList<Folder> m_playlistCache;
+    mutable bool m_playlistCacheValid = false;
+
+    // playlistId → ordered track ids; used by standalone / recentlyPlayedFolders.
+    mutable QHash<int, QVector<int>> m_membership;
+    mutable QSet<int> m_memberedTrackIds;
+    mutable bool m_membershipValid = false;
 };
 
 #endif // TRACKMODEL_H

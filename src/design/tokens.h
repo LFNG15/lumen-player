@@ -60,7 +60,10 @@ struct Motion {
     int normal = 160;
     int slow   = 200;
     bool reduced = false;
+    // Single choke point for motion budgets (Task.md P6 / decision 10).
+    // Returns 0 when reduce-motion is on so timers/animations become no-ops.
     int d(int ms) const { return reduced ? 0 : ms; }
+    bool shouldAnimate() const { return !reduced; }
 };
 
 struct Tokens {

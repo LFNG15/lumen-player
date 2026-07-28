@@ -1,6 +1,7 @@
 #include "thememanager.h"
 #include "stylesheet.h"
 #include "palettes.h"
+#include "paint.h"
 
 #include <QApplication>
 #include <QSettings>
@@ -93,6 +94,9 @@ void ThemeManager::rebuild()
         qApp->setFont(m_tokens.type.body);
         StyleSheet::applyApp(StyleSheet::build(m_tokens));
     }
+    // Theme / density changes resize many cached surfaces — drop them so the
+    // next paint rebuilds against the new tokens (P6 cover cache).
+    paint::clearCache();
     emit changed();
 }
 
