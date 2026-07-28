@@ -1,13 +1,4 @@
+# Prefer the real flags from the MSVC CMake configure (compile_commands.json
+# lives under build/<preset>/; symlink or copy to the source root if needed).
 CompileFlags:
-  Add:
-    - -ID:/Qt/6.11.0/mingw_64/include
-    - -ID:/Qt/6.11.0/mingw_64/include/QtCore
-    - -ID:/Qt/6.11.0/mingw_64/include/QtGui
-    - -ID:/Qt/6.11.0/mingw_64/include/QtWidgets
-    - -ID:/Qt/6.11.0/mingw_64/include/QtMultimedia
-    - -Isrc
-    - -Isrc/pages
-    - -Isrc/player
-    - -Isrc/widgets
-    - -Isrc/database
-    - -std=c++17
+  CompilationDatabase: build/msvc-ninja

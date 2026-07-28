@@ -43,3 +43,12 @@ compile_commands.json
 
 # VS Code (manter para compartilhar configuracoes de build)
 # .vscode/
+
+#Task e ContextProject
+ContextProject.md
+Task.md
+
+
+# aqtinstall
+aqtinstall.log
+

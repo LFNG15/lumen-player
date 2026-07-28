@@ -6,12 +6,24 @@ project(LumenMusic
     LANGUAGES CXX)
 
 # --- C++ standard -----------------------------------------------------------
-set(CMAKE_CXX_STANDARD 17)
+# P0.a′: C++20 (separate from the MinGW→MSVC switch for bisect). Required by
+# C++/WinRT (P5) and enables designated initializers for design tokens (P1).
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Export compile_commands.json so clangd/IntelliSense pick up the real flags.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# --- MSVC toolchain flags (P0.a: MinGW → MSVC) ------------------------------
+# /utf-8 is mandatory: sources are UTF-8 without BOM and non-ASCII string
+# literals are Lang::tr() hash keys. Without it MSVC reads them as CP1252,
+# English translations die silently, and the UI becomes mojibake.
+if(MSVC)
+    add_compile_options(/utf-8 /Zc:__cplusplus /permissive- /EHsc /W3 /MP)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")  # /MD, matches official Qt builds
+endif()
 
 # --- Qt ---------------------------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Multimedia Sql Network)
@@ -29,6 +41,7 @@ set(CMAKE_AUTORCC ON)
 set(PROJECT_SOURCES
     src/main.cpp
     src/database/database.cpp
+    src/database/migrator.cpp
     src/mainwindow.cpp
     src/pages/homepage.cpp
     src/pages/addmusicpage.cpp
@@ -47,6 +60,7 @@ set(PROJECT_SOURCES
 set(PROJECT_HEADERS
     src/mainwindow.h
     src/database/database.h
+    src/database/migrator.h
     src/pages/homepage.h
     src/pages/addmusicpage.h
     src/pages/folderspage.h
@@ -95,28 +109,19 @@ target_link_libraries(LumenMusic PRIVATE
 if(WIN32)
     enable_language(RC)
 
-    # Compile the Windows resource (app icon) in its own object library so it
-    # does NOT inherit the target's include directories. The source tree lives
-    # under a path with spaces and a non-ASCII char ("Área de Trabalho"), and
-    # windres' internal preprocessor mangles such -I paths. With no include
-    # dirs, windres resolves the relative "lumen.ico" against the .rc's own
-    # directory, which works. (This is why the old .pro used a relative RC_FILE.)
-    # Generate the version resource from the single source of truth (PROJECT_VERSION).
-    # VERSIONINFO references no external files, so the spaced/non-ASCII path is a
-    # non-issue here; it lands in the (ASCII) build dir.
+    # Generate VERSIONINFO from the single source of truth (PROJECT_VERSION).
     configure_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/version.rc.in"
         "${CMAKE_CURRENT_BINARY_DIR}/version.rc"
         @ONLY)
 
-    add_library(lumen_winres OBJECT
+    # Attach .rc files directly to the exe. The old OBJECT-library workaround
+    # (lumen_winres) existed only for MinGW windres, which mangled -I paths
+    # containing spaces/accents. The tree now lives under an ASCII path and the
+    # toolchain is MSVC (rc.exe), so the isolation layer is no longer needed.
+    target_sources(LumenMusic PRIVATE
         resources/app.rc
         "${CMAKE_CURRENT_BINARY_DIR}/version.rc")
-    # No moc/uic/rcc here: those inject an autogen include dir (a spaced path)
-    # that windres' preprocessor cannot parse.
-    set_target_properties(lumen_winres PROPERTIES
-        AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
-    target_link_libraries(LumenMusic PRIVATE lumen_winres)
 
     set_target_properties(LumenMusic PROPERTIES
         WIN32_EXECUTABLE ON          # GUI app: no console window
@@ -126,7 +131,7 @@ endif()
 
 # --- Bundle the yt-dlp helper next to the executable ------------------------
 # qmake copied src/thirdparty/yt-dlp.exe into the build dir; do the same so the
-# app can locate it at runtime.
+# app can locate it at runtime. (P8.4 will replace this with first-run download.)
 set(YTDLP_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/thirdparty/yt-dlp.exe")
 if(EXISTS "${YTDLP_SRC}")
     add_custom_command(TARGET LumenMusic POST_BUILD
@@ -152,10 +157,23 @@ if(WIN32)
     if(NOT WINDEPLOYQT_EXECUTABLE)
         message(FATAL_ERROR "windeployqt not found near ${_qt_root}/bin")
     endif()
+
+    # MSVC: --compiler-runtime is a MinGW concept. Ship the VC++ redistributable
+    # DLLs via InstallRequiredSystemLibraries instead.
+    include(InstallRequiredSystemLibraries)
+    if(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+        install(PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION ".")
+    endif()
+
     install(CODE "
         message(STATUS \"Deploying Qt runtime with windeployqt...\")
+        set(_deploy_flag --release)
+        if(CMAKE_INSTALL_CONFIG_NAME STREQUAL \"Debug\")
+            set(_deploy_flag --debug)
+        endif()
         execute_process(COMMAND \"${WINDEPLOYQT_EXECUTABLE}\"
-            --release --compiler-runtime --no-translations --no-system-d3d-compiler
+            \${_deploy_flag}
+            --no-translations --no-system-d3d-compiler
             \"\${CMAKE_INSTALL_PREFIX}/LumenMusic.exe\"
             RESULT_VARIABLE _rc)
         if(NOT _rc EQUAL 0)
@@ -173,5 +191,11 @@ set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_FILE_NAME "LumenMusic-v${PROJECT_VERSION}-win64")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "Lumen Music")
 set(CPACK_GENERATOR "ZIP")
-set(CPACK_STRIP_FILES ON)
+# CPACK_STRIP_FILES is a GCC/binutils concept; leave it off under MSVC.
+set(CPACK_STRIP_FILES OFF)
+if(MSVC)
+    # PDB for post-mortem; /OPT:REF /OPT:ICF keep the Release binary lean.
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /O2")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG /OPT:REF /OPT:ICF")
+endif()
 include(CPack)
