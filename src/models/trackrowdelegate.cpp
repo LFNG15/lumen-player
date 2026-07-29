@@ -88,11 +88,10 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     // Translucent accent wash + light (onAccent) text — not solid fill.
     const bool accentRow = current || hover;
 
-    // Horizontal inset for air beside the pill; vertical must stay modest on
-    // the ~52–56px playlist rows or title/artist paint outside the wash
-    // (Home rows are taller with an outer shell — different geometry).
-    constexpr int kWashPadH = 6;
-    constexpr int kWashPadV = 4;
+    // Playlist list rows only (Home uses its own shell). Slightly more inset
+    // than before so the orange wash matches the ideal margins elsewhere.
+    constexpr int kWashPadH = 8;
+    constexpr int kWashPadV = 5;
     const QRect washR = option.rect.adjusted(kWashPadH, kWashPadV, -kWashPadH, -kWashPadV);
 
     p->setPen(Qt::NoPen);
