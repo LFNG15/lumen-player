@@ -262,17 +262,41 @@ void FolderDetailPage::applySortToModel()
     updateReorderFlag();
 }
 
-void FolderDetailPage::rebuildHeader()
+// Nested addLayout() items are not widgets: takeAt()+deleteLater on the top
+// layout alone leaves labels/covers/buttons as orphans on m_header, so the
+// previous playlist paints under the next one.
+static void clearLayoutTree(QLayout *layout)
 {
-    // Tear down previous header contents.
-    if (QLayout *old = m_header->layout()) {
-        QLayoutItem *it;
-        while ((it = old->takeAt(0)) != nullptr) {
-            if (it->widget()) it->widget()->deleteLater();
-            delete it;
+    if (!layout) return;
+    while (QLayoutItem *it = layout->takeAt(0)) {
+        if (QWidget *w = it->widget()) {
+            w->hide();
+            delete w;
+        } else if (QLayout *sub = it->layout()) {
+            clearLayoutTree(sub);
         }
+        delete it;
+    }
+}
+
+static void wipeHeaderWidget(QWidget *header)
+{
+    if (!header) return;
+    if (QLayout *old = header->layout()) {
+        clearLayoutTree(old);
         delete old;
     }
+    // Anything not owned by the layout (or missed by nesting) still paints.
+    const auto kids = header->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget *w : kids)
+        delete w;
+}
+
+void FolderDetailPage::rebuildHeader()
+{
+    wipeHeaderWidget(m_header);
+    m_searchEdit = nullptr;
+    m_statsLabel = nullptr;
 
     auto *lay = new QVBoxLayout(m_header);
     lay->setContentsMargins(32, 28, 32, 12);

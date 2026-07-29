@@ -105,16 +105,30 @@ void LikedPage::showContext(const QPoint &globalPos)
         m_ctx->popup(ids, globalPos);
 }
 
+static void clearLayoutTreeLiked(QLayout *layout)
+{
+    if (!layout) return;
+    while (QLayoutItem *it = layout->takeAt(0)) {
+        if (QWidget *w = it->widget()) {
+            w->hide();
+            delete w;
+        } else if (QLayout *sub = it->layout()) {
+            clearLayoutTreeLiked(sub);
+        }
+        delete it;
+    }
+}
+
 void LikedPage::rebuildHeader()
 {
+    // Same nested-layout orphan bug as FolderDetailPage (playlist switch overlay).
     if (QLayout *old = m_header->layout()) {
-        QLayoutItem *it;
-        while ((it = old->takeAt(0)) != nullptr) {
-            if (it->widget()) it->widget()->deleteLater();
-            delete it;
-        }
+        clearLayoutTreeLiked(old);
         delete old;
     }
+    const auto kids = m_header->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget *w : kids)
+        delete w;
 
     auto *lay = new QVBoxLayout(m_header);
     lay->setContentsMargins(32, 28, 32, 12);
