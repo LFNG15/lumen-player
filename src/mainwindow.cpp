@@ -804,17 +804,19 @@ void MainWindow::refreshSidebarFolders() {
         return m_currentPage == "folder"
             && m_folderDetailPage->property("folderName").toString() == f.name;
     };
+    // "Your Playlists" rows: no orange hover. Active = subtle surface tint only.
     auto rowStyle = [](bool active) {
         if (active) {
             return QString(
                 "QPushButton { background-color: %1; border: none; border-radius: 8px; color: %2; }"
-                "QPushButton:hover { background-color: %3; color: %2; }"
-            ).arg(Theme::accent().name(), Theme::onAccent().name(), Theme::accentHover().name());
+                "QPushButton:hover { background-color: %1; color: %2; }"
+            ).arg(Theme::cardHover().name(), Theme::text().name());
         }
         return QString(
             "QPushButton { background: transparent; border: none; border-radius: 8px; color: %1; }"
-            "QPushButton:hover { background-color: %2; color: %3; }"
-        ).arg(Theme::textSoft().name(), Theme::accent().name(), Theme::onAccent().name());
+            "QPushButton:hover { background: transparent; color: %1; }"
+            "QPushButton:pressed { background: transparent; color: %1; }"
+        ).arg(Theme::textSoft().name());
     };
 
     if (folders.isEmpty()) {
@@ -887,9 +889,9 @@ void MainWindow::refreshSidebarFolders() {
                 if (!compact)
                     btnLayout->addWidget(CoverWidget::playlistCover(f, tracks, 28, 5), 0, Qt::AlignVCenter);
                 const bool active = isActiveFolder(f);
-                // Labels don't inherit QPushButton color — set explicitly for active (white/onAccent).
-                const QString nameCol = active ? Theme::onAccent().name() : Theme::textSoft().name();
-                const QString countCol = active ? Theme::onAccent().name() : Theme::textMuted().name();
+                // Labels don't inherit QPushButton color — set explicitly.
+                const QString nameCol = active ? Theme::text().name() : Theme::textSoft().name();
+                const QString countCol = active ? Theme::textSoft().name() : Theme::textMuted().name();
                 auto *nameLabel = new QLabel(f.name);
                 nameLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
                 lumen::design::StyleSheet::apply(nameLabel, QString(
