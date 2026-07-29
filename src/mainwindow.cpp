@@ -562,16 +562,19 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 
     auto makeNavBtn = [this](const QString &text, const QString &icon) -> QPushButton* {
         auto *btn = new QPushButton(QString("  %1  %2").arg(icon, text));
+        btn->setObjectName(QStringLiteral("lumenNavItem"));
         btn->setFixedHeight(40);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFont(Theme::bodyFont(13));
         // Stash the parts so the collapsed mode can show the icon alone.
         btn->setProperty("navIcon", icon);
         btn->setProperty("navText", text);
+        // Idle soft; hover/active use solid accent + onAccent (white on deep accents).
         lumen::design::StyleSheet::apply(btn, QString(
-            "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; text-align: left; padding-left: 14px; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; }"
-            "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; color: %2; }"
-        ).arg(Theme::textSoft().name(), Theme::text().name()));
+            "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; "
+            "text-align: left; padding-left: 14px; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; font-weight: 600; }"
+            "QPushButton:hover { background-color: %2; color: %3; }"
+        ).arg(Theme::textSoft().name(), Theme::accent().name(), Theme::onAccent().name()));
         return btn;
     };
 
@@ -794,10 +797,16 @@ void MainWindow::refreshSidebarFolders() {
             && m_folderDetailPage->property("folderName").toString() == f.name;
     };
     auto rowStyle = [](bool active) {
+        if (active) {
+            return QString(
+                "QPushButton { background-color: %1; border: none; border-radius: 8px; color: %2; }"
+                "QPushButton:hover { background-color: %3; color: %2; }"
+            ).arg(Theme::accent().name(), Theme::onAccent().name(), Theme::accentHover().name());
+        }
         return QString(
-            "QPushButton { background: %1; border: none; border-radius: 8px; }"
-            "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; }"
-        ).arg(active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"));
+            "QPushButton { background: transparent; border: none; border-radius: 8px; color: %1; }"
+            "QPushButton:hover { background-color: %2; color: %3; }"
+        ).arg(Theme::textSoft().name(), Theme::accent().name(), Theme::onAccent().name());
     };
 
     if (folders.isEmpty()) {
@@ -869,12 +878,20 @@ void MainWindow::refreshSidebarFolders() {
                 btnLayout->setSpacing(8);
                 if (!compact)
                     btnLayout->addWidget(CoverWidget::playlistCover(f, tracks, 28, 5), 0, Qt::AlignVCenter);
+                const bool active = isActiveFolder(f);
+                // Labels don't inherit QPushButton color — set explicitly for active (white/onAccent).
+                const QString nameCol = active ? Theme::onAccent().name() : Theme::textSoft().name();
+                const QString countCol = active ? Theme::onAccent().name() : Theme::textMuted().name();
                 auto *nameLabel = new QLabel(f.name);
-                lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+                nameLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+                lumen::design::StyleSheet::apply(nameLabel, QString(
+                    "color: %1; background: transparent;").arg(nameCol));
                 nameLabel->setFont(Theme::bodyFont(12));
                 auto *countLabel = new QLabel(QString::number(tracks.size()));
+                countLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
                 countLabel->setFont(Theme::monoFont(10));
-                lumen::design::StyleSheet::apply(countLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+                lumen::design::StyleSheet::apply(countLabel, QString(
+                    "color: %1; background: transparent;").arg(countCol));
                 btnLayout->addWidget(nameLabel);
                 btnLayout->addStretch();
                 btnLayout->addWidget(countLabel);
@@ -1100,20 +1117,31 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
 void MainWindow::navigateTo(const QString &page, const QString &data) {
     m_currentPage = page;
 
-    // Update nav button styles (centered icons in collapsed mode)
+    // Nav chrome: idle = soft text; hover/active = solid accent + onAccent (white).
     auto activeStyle = [this](bool active) {
         const QString align = m_sidebarCollapsed
             ? QStringLiteral("text-align: center; padding-left: 0px;")
             : QStringLiteral("text-align: left; padding-left: 14px;");
+        const QString fam = QStringLiteral(
+            "font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; border: none; border-radius: 10px; ");
         if (active) {
             return QString(
-                "QPushButton { background: " + Theme::accentRgba(0.15) + "; color: %1; border: none; border-radius: 10px; " + align + " font-weight: bold; }"
-            ).arg(Theme::accent().name());
+                "QPushButton { background-color: %1; color: %2; %3 %4 font-weight: 700; }"
+                "QPushButton:hover { background-color: %5; color: %2; }"
+            ).arg(Theme::accent().name(),
+                  Theme::onAccent().name(),
+                  fam,
+                  align,
+                  Theme::accentHover().name());
         }
         return QString(
-            "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; " + align + " }"
-            "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; color: %2; }"
-        ).arg(Theme::textSoft().name(), Theme::text().name());
+            "QPushButton { background: transparent; color: %1; %2 %3 font-weight: 600; }"
+            "QPushButton:hover { background-color: %4; color: %5; }"
+        ).arg(Theme::textSoft().name(),
+              fam,
+              align,
+              Theme::accent().name(),
+              Theme::onAccent().name());
     };
 
     lumen::design::StyleSheet::apply(m_navHome, activeStyle(page == "home"));

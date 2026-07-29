@@ -81,7 +81,7 @@ QString StyleSheet::build(const Tokens &t)
             border-top: %14px solid %4;
         }
 
-        /* Nav item — idle */
+        /* Nav item — idle soft; hover/active solid accent + onAccent (white) */
         QPushButton#lumenNavItem {
             background: transparent;
             color: %5;
@@ -93,14 +93,17 @@ QString StyleSheet::build(const Tokens &t)
             min-height: %8px;
         }
         QPushButton#lumenNavItem:hover {
-            color: %2;
-            background: %9;
+            background-color: %10;
+            color: %11;
         }
-        /* Nav item — active: solid accent fill (Stream grammar) */
         QPushButton#lumenNavItem[active="true"] {
             background-color: %10;
             color: %11;
             font-weight: 700;
+        }
+        QPushButton#lumenNavItem[active="true"]:hover {
+            background-color: %15;
+            color: %11;
         }
 
         /* Accent / ghost / danger buttons */
