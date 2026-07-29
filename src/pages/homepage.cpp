@@ -110,13 +110,15 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     if (!folders.isEmpty()) {
         auto *grid = new QGridLayout();
         grid->setSpacing(8);
+        // Chips reflow: ~ min chip width 200 + gap.
+        const int chipCols = qBound(1, (qMax(240, width() - 64) + 8) / 208, 4);
         int col = 0, row = 0;
         for (auto &f : folders) {
             int count = m_model->tracksInFolder(f.name).size();
             auto *chip = createFolderChip(f, count);
             grid->addWidget(chip, row, col);
             col++;
-            if (col >= 3) { col = 0; row++; }
+            if (col >= chipCols) { col = 0; row++; }
         }
         // Liked chip — same layout as playlist chips, with a heart cover.
         auto liked = m_model->likedTracks();

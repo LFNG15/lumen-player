@@ -47,6 +47,7 @@ private:
     void showEmptyUi();
     void syncTransportUi();
     void updateVolIcon();
+    void applyResponsiveLayout(int width);
     QString buttonStyle(bool active = false) const;
     QString sliderStyle(const QString &accentColor) const;
 

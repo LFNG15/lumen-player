@@ -28,6 +28,7 @@
 #include <QCursor>
 #include <QFrame>
 #include <QPalette>
+#include <QSizePolicy>
 #include <algorithm>
 
 namespace Icons = lumen::design::Icons;
@@ -296,6 +297,7 @@ void FolderDetailPage::setupHeaderUi()
 
     m_coverHost = new QWidget(m_header);
     m_coverHost->setFixedSize(140, 140);
+    m_coverHost->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     auto *coverLay = new QVBoxLayout(m_coverHost);
     coverLay->setContentsMargins(0, 0, 0, 0);
     coverLay->setSpacing(0);
@@ -318,6 +320,8 @@ void FolderDetailPage::setupHeaderUi()
     m_nameLabel->setWordWrap(true);
     m_nameLabel->setTextInteractionFlags(Qt::NoTextInteraction);
     m_nameLabel->setAutoFillBackground(true);
+    m_nameLabel->setMinimumWidth(0);
+    m_nameLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     info->addWidget(m_nameLabel);
 
     m_statsLabel = new QLabel(m_header);

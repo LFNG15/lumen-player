@@ -83,6 +83,9 @@ void FoldersPage::refresh() {
 
     auto *grid = new QGridLayout();
     grid->setSpacing(16);
+    // Columns adapt to available content width (~ card 180 + gap 16).
+    const int viewportW = qMax(200, width() - 64);
+    const int cols = qBound(1, (viewportW + 16) / (180 + 16), 6);
     int col = 0, row = 0;
 
     // Standalone tracks card
@@ -136,7 +139,7 @@ void FoldersPage::refresh() {
 
         grid->addWidget(card, row, col);
         col++;
-        if (col >= 4) { col = 0; row++; }
+        if (col >= cols) { col = 0; row++; }
     }
 
     for (auto &f : folders) {
@@ -246,7 +249,7 @@ void FoldersPage::refresh() {
 
         grid->addWidget(card, row, col);
         col++;
-        if (col >= 4) { col = 0; row++; }
+        if (col >= cols) { col = 0; row++; }
     }
 
     auto *gridWidget = new QWidget();

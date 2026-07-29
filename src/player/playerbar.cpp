@@ -6,6 +6,8 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QResizeEvent>
+#include <QSizePolicy>
+#include <QFontMetrics>
 
 PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     : QWidget(parent)
@@ -33,13 +35,15 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     m_titleLabel->setFont(Theme::bodyFont(13));
     lumen::design::StyleSheet::apply(m_titleLabel, QString(
         "color: %1; font-weight: 600; background: transparent;").arg(Theme::text().name()));
-    m_titleLabel->setMaximumWidth(180);
+    m_titleLabel->setMinimumWidth(0);
+    m_titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     m_artistLabel = new QLabel(QString(), this);
     m_artistLabel->setFont(Theme::bodyFont(11));
     lumen::design::StyleSheet::apply(m_artistLabel, QString(
         "color: %1; background: transparent;").arg(Theme::textSoft().name()));
-    m_artistLabel->setMaximumWidth(180);
+    m_artistLabel->setMinimumWidth(0);
+    m_artistLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     infoLayout->addStretch();
     infoLayout->addWidget(m_titleLabel);
@@ -50,9 +54,10 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
 
     m_leftWidget = new QWidget(this);
     m_leftWidget->setLayout(leftLayout);
-    m_leftWidget->setFixedWidth(240);
+    m_leftWidget->setMinimumWidth(0);
+    m_leftWidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     lumen::design::StyleSheet::apply(m_leftWidget, QStringLiteral("background: transparent;"));
-    mainLayout->addWidget(m_leftWidget);
+    mainLayout->addWidget(m_leftWidget, 0);
 
     // Center
     m_controlsContainer = new QWidget(this);
@@ -145,7 +150,9 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     m_volumeSlider = new ClickableSlider(Qt::Horizontal, this);
     m_volumeSlider->setRange(0, 100);
     m_volumeSlider->setValue(70);
-    m_volumeSlider->setFixedSize(100, 24);
+    m_volumeSlider->setMinimumWidth(48);
+    m_volumeSlider->setMaximumWidth(100);
+    m_volumeSlider->setFixedHeight(24);
     lumen::design::StyleSheet::apply(m_volumeSlider, sliderStyle(Theme::textSoft().name()));
 
     volLayout->addStretch();
@@ -155,9 +162,10 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
 
     m_rightWidget = new QWidget(this);
     m_rightWidget->setLayout(volLayout);
-    m_rightWidget->setFixedWidth(196);
+    m_rightWidget->setMinimumWidth(0);
+    m_rightWidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     lumen::design::StyleSheet::apply(m_rightWidget, QStringLiteral("background: transparent;"));
-    mainLayout->addWidget(m_rightWidget);
+    mainLayout->addWidget(m_rightWidget, 0);
 
     m_emptyLabel = new QLabel(Lang::tr("Adicione músicas para começar a ouvir"), this);
     m_emptyLabel->setFont(Theme::bodyFont(12));
@@ -244,6 +252,55 @@ void PlayerBar::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     if (m_emptyLabel) m_emptyLabel->setGeometry(rect());
+    applyResponsiveLayout(event->size().width());
+}
+
+void PlayerBar::applyResponsiveLayout(int width)
+{
+    // Breakpoints for the fixed chrome of the player bar.
+    // wide  ≥ 980: full chrome
+    // mid   ≥ 760: hide volume slider, keep icons
+    // narrow < 760: compact meta + hide shuffle/repeat labels space + hide volume
+    const bool narrow = width < 760;
+    const bool mid    = width < 980;
+
+    if (m_vinyl)
+        m_vinyl->setVisible(!narrow);
+    if (m_volumeSlider)
+        m_volumeSlider->setVisible(!mid);
+
+    // Left meta column width scales with available width.
+    if (m_leftWidget) {
+        int leftW = 240;
+        if (narrow) leftW = 120;
+        else if (mid) leftW = 180;
+        m_leftWidget->setFixedWidth(leftW);
+        if (m_titleLabel) {
+            m_titleLabel->setMaximumWidth(leftW - (narrow ? 16 : 72));
+            m_titleLabel->setText(m_titleLabel->fontMetrics().elidedText(
+                m_titleLabel->property("fullText").toString().isEmpty()
+                    ? m_titleLabel->text()
+                    : m_titleLabel->property("fullText").toString(),
+                Qt::ElideRight, m_titleLabel->maximumWidth()));
+        }
+        if (m_artistLabel) {
+            m_artistLabel->setMaximumWidth(leftW - (narrow ? 16 : 72));
+            m_artistLabel->setText(m_artistLabel->fontMetrics().elidedText(
+                m_artistLabel->property("fullText").toString().isEmpty()
+                    ? m_artistLabel->text()
+                    : m_artistLabel->property("fullText").toString(),
+                Qt::ElideRight, m_artistLabel->maximumWidth()));
+        }
+    }
+
+    if (m_rightWidget) {
+        int rightW = mid ? 72 : 196;
+        if (narrow) rightW = 56;
+        m_rightWidget->setFixedWidth(rightW);
+    }
+
+    if (m_shuffleBtn) m_shuffleBtn->setVisible(!narrow);
+    if (m_repeatBtn)  m_repeatBtn->setVisible(!narrow);
 }
 
 void PlayerBar::showEmptyUi()
@@ -256,6 +313,8 @@ void PlayerBar::showEmptyUi()
 
 void PlayerBar::showTrackUi(const Track &track)
 {
+    m_titleLabel->setProperty("fullText", track.title);
+    m_artistLabel->setProperty("fullText", track.artist);
     m_titleLabel->setText(track.title);
     m_artistLabel->setText(track.artist);
     m_vinyl->setGradient(track.cover);
@@ -263,6 +322,7 @@ void PlayerBar::showTrackUi(const Track &track)
     m_controlsContainer->show();
     m_leftWidget->show();
     m_rightWidget->show();
+    applyResponsiveLayout(width());
 }
 
 void PlayerBar::syncTransportUi()

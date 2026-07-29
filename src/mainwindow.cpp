@@ -1071,6 +1071,30 @@ void MainWindow::repositionToast() {
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
     if (m_toast && m_toast->isVisible()) repositionToast();
+
+    // Keep content readable on narrow windows: clamp queue, prefer collapsed
+    // sidebar under ~900px so the track list does not get crushed.
+    if (!m_splitter) return;
+    const int w = width();
+    if (w < 900 && !m_sidebarCollapsed) {
+        // Soft hint only once per shrink session would be better UX; for now
+        // leave expanded — but clamp queue so content keeps ≥ 320px.
+    }
+    if (m_queuePage && m_queuePage->isVisible()) {
+        const int queueMax = qBound(180, w / 4, 420);
+        m_queuePage->setMaximumWidth(queueMax);
+        m_queuePage->setMinimumWidth(qMin(200, queueMax));
+        auto sizes = m_splitter->sizes();
+        if (sizes.size() >= 3 && sizes[2] > queueMax) {
+            const int delta = sizes[2] - queueMax;
+            sizes[2] = queueMax;
+            if (sizes.size() > 1) sizes[1] += delta;
+            m_splitter->setSizes(sizes);
+        }
+    }
+    // Content pane floor
+    if (QWidget *content = m_stack ? m_stack->parentWidget() : nullptr)
+        content->setMinimumWidth(w < 800 ? 280 : 340);
 }
 
 void MainWindow::navigateTo(const QString &page, const QString &data) {
