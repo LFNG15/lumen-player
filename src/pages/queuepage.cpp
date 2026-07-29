@@ -194,11 +194,11 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
 
     // Outer shell + padded inner button so accent wash isn't edge-to-edge.
     auto *shell = new QWidget();
-    shell->setFixedHeight(rh + 6);
+    shell->setFixedHeight(rh + 14);
     shell->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     lumen::design::StyleSheet::apply(shell, QStringLiteral("background: transparent;"));
     auto *shellLay = new QVBoxLayout(shell);
-    shellLay->setContentsMargins(6, 3, 6, 3);
+    shellLay->setContentsMargins(6, 7, 6, 7);
     shellLay->setSpacing(0);
 
     auto *row = new QPushButton(shell);

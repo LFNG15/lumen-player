@@ -266,13 +266,13 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
 QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, bool isPlaying) {
     bool active = (track.id == currentId);
     auto *row = new QWidget();
-    row->setFixedHeight(56);
+    row->setFixedHeight(60);
     row->setCursor(Qt::PointingHandCursor);
     lumen::design::StyleSheet::apply(row, QStringLiteral("background: transparent;"));
 
-    // Outer pad so the accent wash matches title/artist margins (not edge-to-edge).
+    // Outer pad — more top/bottom so the orange wash is not edge-to-edge.
     auto *outer = new QVBoxLayout(row);
-    outer->setContentsMargins(6, 3, 6, 3);
+    outer->setContentsMargins(6, 7, 6, 7);
     outer->setSpacing(0);
 
     auto *inner = new QWidget(row);
