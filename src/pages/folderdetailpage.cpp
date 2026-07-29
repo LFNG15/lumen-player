@@ -85,6 +85,7 @@ FolderDetailPage::FolderDetailPage(TrackModel *model, QWidget *parent)
     m_header = new QWidget(this);
     lumen::design::StyleSheet::apply(m_header, QStringLiteral("background: transparent;"));
     root->addWidget(m_header);
+    setupHeaderUi();
 
     m_listModel = new TrackListModel(m_model, this);
     m_proxy = new TrackFilterProxy(this);
@@ -262,48 +263,13 @@ void FolderDetailPage::applySortToModel()
     updateReorderFlag();
 }
 
-// Nested addLayout() items are not widgets: takeAt()+deleteLater on the top
-// layout alone leaves labels/covers/buttons as orphans on m_header, so the
-// previous playlist paints under the next one.
-static void clearLayoutTree(QLayout *layout)
+void FolderDetailPage::setupHeaderUi()
 {
-    if (!layout) return;
-    while (QLayoutItem *it = layout->takeAt(0)) {
-        if (QWidget *w = it->widget()) {
-            w->hide();
-            delete w;
-        } else if (QLayout *sub = it->layout()) {
-            clearLayoutTree(sub);
-        }
-        delete it;
-    }
-}
-
-static void wipeHeaderWidget(QWidget *header)
-{
-    if (!header) return;
-    if (QLayout *old = header->layout()) {
-        clearLayoutTree(old);
-        delete old;
-    }
-    // Anything not owned by the layout (or missed by nesting) still paints.
-    const auto kids = header->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
-    for (QWidget *w : kids)
-        delete w;
-}
-
-void FolderDetailPage::rebuildHeader()
-{
-    wipeHeaderWidget(m_header);
-    m_searchEdit = nullptr;
-    m_statsLabel = nullptr;
-
+    // Built once — updateHeader() only mutates text/cover. Rebuilding the whole
+    // tree left orphan QLabels (playlist names) stacked on top of each other.
     auto *lay = new QVBoxLayout(m_header);
     lay->setContentsMargins(32, 28, 32, 12);
     lay->setSpacing(12);
-
-    const bool isStandalone = m_folderName.isEmpty();
-    auto tracks = displayedTracks();
 
     auto *backBtn = new QPushButton(Icons::back(), m_header);
     backBtn->setFixedSize(34, 34);
@@ -319,42 +285,33 @@ void FolderDetailPage::rebuildHeader()
     auto *headerRow = new QHBoxLayout();
     headerRow->setSpacing(20);
 
-    QWidget *cover = nullptr;
-    if (isStandalone) {
-        cover = new QWidget();
-        cover->setFixedSize(140, 140);
-        lumen::design::StyleSheet::apply(cover, QString(
-            "background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 10px;"
-        ).arg(Theme::accent().name(), Theme::danger().name()));
-    } else {
-        Folder folder;
-        for (const auto &f : m_model->folders())
-            if (f.id == m_folderId) { folder = f; break; }
-        cover = CoverWidget::playlistCover(folder, tracks, 140, 10, m_header);
-    }
-    headerRow->addWidget(cover);
+    m_coverHost = new QWidget(m_header);
+    m_coverHost->setFixedSize(140, 140);
+    auto *coverLay = new QVBoxLayout(m_coverHost);
+    coverLay->setContentsMargins(0, 0, 0, 0);
+    coverLay->setSpacing(0);
+    headerRow->addWidget(m_coverHost, 0, Qt::AlignTop);
 
     auto *info = new QVBoxLayout();
+    info->setSpacing(4);
     info->addStretch();
-    auto *typeLabel = new QLabel(isStandalone ? Lang::tr("MÚSICAS AVULSAS") : Lang::tr("PLAYLIST"));
-    typeLabel->setFont(Theme::bodyFont(10));
-    lumen::design::StyleSheet::apply(typeLabel, QString(
+
+    m_typeLabel = new QLabel(m_header);
+    m_typeLabel->setFont(Theme::bodyFont(10));
+    lumen::design::StyleSheet::apply(m_typeLabel, QString(
         "color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;"
     ).arg(Theme::textMuted().name()));
-    info->addWidget(typeLabel);
+    info->addWidget(m_typeLabel);
 
-    auto *nameLabel = new QLabel(isStandalone ? Lang::tr("Músicas avulsas") : m_folderName);
-    nameLabel->setFont(Theme::titleFont(28));
-    lumen::design::StyleSheet::apply(nameLabel, QString(
+    m_nameLabel = new QLabel(m_header);
+    m_nameLabel->setFont(Theme::titleFont(28));
+    m_nameLabel->setWordWrap(true);
+    m_nameLabel->setTextInteractionFlags(Qt::NoTextInteraction);
+    lumen::design::StyleSheet::apply(m_nameLabel, QString(
         "color: %1; background: transparent;").arg(Theme::text().name()));
-    info->addWidget(nameLabel);
+    info->addWidget(m_nameLabel);
 
-    qint64 totalMs = 0;
-    for (const auto &t : tracks) totalMs += t.durationMs;
-    m_statsLabel = new QLabel(QString(Lang::tr("%1 faixa%2%3"))
-        .arg(tracks.size())
-        .arg(tracks.size() != 1 ? "s" : "")
-        .arg(totalMs > 0 ? QStringLiteral(" · %1").arg(Theme::formatTime(totalMs)) : QString()));
+    m_statsLabel = new QLabel(m_header);
     m_statsLabel->setFont(Theme::bodyFont(12));
     lumen::design::StyleSheet::apply(m_statsLabel, QString(
         "color: %1; background: transparent;").arg(Theme::textSoft().name()));
@@ -362,47 +319,44 @@ void FolderDetailPage::rebuildHeader()
     info->addStretch();
     headerRow->addLayout(info, 1);
 
-    if (!isStandalone) {
-        auto *editBtn = new QPushButton(Icons::edit(), m_header);
-        editBtn->setFixedSize(36, 36);
-        editBtn->setCursor(Qt::PointingHandCursor);
-        editBtn->setFont(Theme::iconFont(12));
-        editBtn->setToolTip(Lang::tr("Editar playlist"));
-        lumen::design::StyleSheet::apply(editBtn, QString(
-            "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; }"
-            "QPushButton:hover { color: %3; border-color: %3; }"
-        ).arg(Theme::textMuted().name(), Theme::border().name(), Theme::accent().name()));
-        connect(editBtn, &QPushButton::clicked, this, &FolderDetailPage::showEditDialog);
-        headerRow->addWidget(editBtn, 0, Qt::AlignBottom);
-    }
+    m_editBtn = new QPushButton(Icons::edit(), m_header);
+    m_editBtn->setFixedSize(36, 36);
+    m_editBtn->setCursor(Qt::PointingHandCursor);
+    m_editBtn->setFont(Theme::iconFont(12));
+    m_editBtn->setToolTip(Lang::tr("Editar playlist"));
+    lumen::design::StyleSheet::apply(m_editBtn, QString(
+        "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; }"
+        "QPushButton:hover { color: %3; border-color: %3; }"
+    ).arg(Theme::textMuted().name(), Theme::border().name(), Theme::accent().name()));
+    connect(m_editBtn, &QPushButton::clicked, this, &FolderDetailPage::showEditDialog);
+    headerRow->addWidget(m_editBtn, 0, Qt::AlignBottom);
+
     lay->addLayout(headerRow);
 
-    // Controls row: play + search + sort
     auto *controls = new QHBoxLayout();
     controls->setSpacing(10);
 
-    auto *playBtn = new QPushButton(QStringLiteral("  %1  %2")
-        .arg(Icons::play(), Lang::tr("Tocar")));
-    playBtn->setObjectName(QStringLiteral("lumenAccentBtn"));
-    playBtn->setCursor(Qt::PointingHandCursor);
-    playBtn->setFont(Theme::bodyFont(13));
-    playBtn->setFixedHeight(40);
-    connect(playBtn, &QPushButton::clicked, this, [this]() {
+    m_playBtn = new QPushButton(m_header);
+    m_playBtn->setObjectName(QStringLiteral("lumenAccentBtn"));
+    m_playBtn->setCursor(Qt::PointingHandCursor);
+    m_playBtn->setFont(Theme::bodyFont(13));
+    m_playBtn->setFixedHeight(40);
+    connect(m_playBtn, &QPushButton::clicked, this, [this]() {
         const auto tracks = displayedTracks();
         if (!tracks.isEmpty())
             emit playRequested(tracks.first());
     });
-    controls->addWidget(playBtn);
+    controls->addWidget(m_playBtn);
 
     m_searchEdit = new QLineEdit(m_header);
     m_searchEdit->setPlaceholderText(Lang::tr("Buscar na playlist"));
     m_searchEdit->setFont(Theme::bodyFont(12));
     m_searchEdit->setFixedHeight(36);
-    m_searchEdit->setText(m_filterText);
     m_searchEdit->setClearButtonEnabled(true);
     connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString &t) {
         m_filterText = t;
-        m_proxy->setNeedle(TextUtils::normalized(t));
+        if (m_proxy)
+            m_proxy->setNeedle(TextUtils::normalized(t));
         updateReorderFlag();
     });
     controls->addWidget(m_searchEdit, 1);
@@ -422,6 +376,66 @@ void FolderDetailPage::rebuildHeader()
     lay->addLayout(controls);
 }
 
+void FolderDetailPage::replaceCover(QWidget *cover)
+{
+    if (!m_coverHost || !cover) {
+        delete cover;
+        return;
+    }
+    if (QLayout *lay = m_coverHost->layout()) {
+        while (QLayoutItem *it = lay->takeAt(0)) {
+            if (QWidget *w = it->widget())
+                delete w;
+            delete it;
+        }
+        lay->addWidget(cover);
+    } else {
+        cover->setParent(m_coverHost);
+        cover->setGeometry(0, 0, 140, 140);
+        cover->show();
+    }
+}
+
+void FolderDetailPage::updateHeader()
+{
+    const bool isStandalone = m_folderName.isEmpty();
+    const auto tracks = displayedTracks();
+
+    m_typeLabel->setText(isStandalone ? Lang::tr("MÚSICAS AVULSAS") : Lang::tr("PLAYLIST"));
+    m_nameLabel->setText(isStandalone ? Lang::tr("Músicas avulsas") : m_folderName);
+
+    qint64 totalMs = 0;
+    for (const auto &t : tracks)
+        totalMs += t.durationMs;
+    m_statsLabel->setText(QString(Lang::tr("%1 faixa%2%3"))
+        .arg(tracks.size())
+        .arg(tracks.size() != 1 ? QStringLiteral("s") : QString())
+        .arg(totalMs > 0 ? QStringLiteral(" · %1").arg(Theme::formatTime(totalMs)) : QString()));
+
+    m_editBtn->setVisible(!isStandalone);
+    m_playBtn->setText(QStringLiteral("  %1  %2").arg(Icons::play(), Lang::tr("Tocar")));
+
+    // Avoid re-emitting textChanged when restoring the same filter.
+    if (m_searchEdit->text() != m_filterText)
+        m_searchEdit->setText(m_filterText);
+
+    QWidget *cover = nullptr;
+    if (isStandalone) {
+        cover = new QWidget(m_coverHost);
+        cover->setFixedSize(140, 140);
+        lumen::design::StyleSheet::apply(cover, QString(
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 10px;"
+        ).arg(Theme::accent().name(), Theme::danger().name()));
+    } else {
+        Folder folder;
+        for (const auto &f : m_model->folders()) {
+            if (f.id == m_folderId) { folder = f; break; }
+        }
+        cover = CoverWidget::playlistCover(folder, tracks, 140, 10, m_coverHost);
+    }
+    replaceCover(cover);
+}
+
 void FolderDetailPage::refresh(int currentTrackId, bool isPlaying)
 {
     m_lastCurrentId = currentTrackId;
@@ -430,7 +444,7 @@ void FolderDetailPage::refresh(int currentTrackId, bool isPlaying)
     applySortToModel();
     m_listModel->setPlaybackState(currentTrackId, isPlaying);
     m_proxy->setNeedle(TextUtils::normalized(m_filterText));
-    rebuildHeader();
+    updateHeader();
 }
 
 void FolderDetailPage::showSortMenu()

@@ -7,6 +7,7 @@
 class QListView;
 class QLineEdit;
 class QLabel;
+class QPushButton;
 class TrackListModel;
 class TrackFilterProxy;
 class TrackRowDelegate;
@@ -32,7 +33,9 @@ signals:
     void navigateBack();
 
 private:
-    void rebuildHeader();
+    void setupHeaderUi();
+    void updateHeader();
+    void replaceCover(QWidget *cover);
     void applySortToModel();
     void updateReorderFlag();
     void showEditDialog();
@@ -47,13 +50,18 @@ private:
     int m_folderId = 0;
 
     QWidget *m_header = nullptr;
+    QWidget *m_coverHost = nullptr;
+    QLabel *m_typeLabel = nullptr;
+    QLabel *m_nameLabel = nullptr;
+    QLabel *m_statsLabel = nullptr;
+    QPushButton *m_editBtn = nullptr;
+    QPushButton *m_playBtn = nullptr;
     QListView *m_view = nullptr;
     TrackListModel *m_listModel = nullptr;
     TrackFilterProxy *m_proxy = nullptr;
     TrackRowDelegate *m_delegate = nullptr;
     TrackContextMenu *m_ctx = nullptr;
     QLineEdit *m_searchEdit = nullptr;
-    QLabel *m_statsLabel = nullptr;
 
     QString m_filterText;
     int  m_lastCurrentId = 0;
