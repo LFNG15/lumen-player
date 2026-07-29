@@ -88,16 +88,22 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     // Translucent accent wash + light (onAccent) text — not solid fill.
     const bool accentRow = current || hover;
 
+    // Inset matches content chrome (zoneRect uses 8×4) so the wash aligns
+    // with title/artist margins instead of hugging the full row edge.
+    constexpr int kWashPadH = 6;
+    constexpr int kWashPadV = 3;
+    const QRect washR = option.rect.adjusted(kWashPadH, kWashPadV, -kWashPadH, -kWashPadV);
+
     p->setPen(Qt::NoPen);
     if (accentRow) {
         QColor wash = c.accent;
         // ~opaque-translucent orange; stronger when current/playing.
         wash.setAlpha(current ? 90 : 55); // 90/255≈0.35, 55/255≈0.22
         p->setBrush(wash);
-        p->drawRoundedRect(option.rect.adjusted(2, 1, -2, -1), 8, 8);
+        p->drawRoundedRect(washR, 8, 8);
     } else if (selected) {
         p->setBrush(c.cardHover);
-        p->drawRoundedRect(option.rect.adjusted(2, 1, -2, -1), 8, 8);
+        p->drawRoundedRect(washR, 8, 8);
     }
 
     // Zones

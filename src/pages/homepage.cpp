@@ -266,16 +266,24 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
 QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, bool isPlaying) {
     bool active = (track.id == currentId);
     auto *row = new QWidget();
-    row->setObjectName("trackRow");
-    row->setFixedHeight(52);
+    row->setFixedHeight(56);
     row->setCursor(Qt::PointingHandCursor);
-    // Active: translucent accent wash + light text.
-    lumen::design::StyleSheet::apply(row, QString(
+    lumen::design::StyleSheet::apply(row, QStringLiteral("background: transparent;"));
+
+    // Outer pad so the accent wash matches title/artist margins (not edge-to-edge).
+    auto *outer = new QVBoxLayout(row);
+    outer->setContentsMargins(6, 3, 6, 3);
+    outer->setSpacing(0);
+
+    auto *inner = new QWidget(row);
+    inner->setObjectName(QStringLiteral("trackRow"));
+    lumen::design::StyleSheet::apply(inner, QString(
         "QWidget#trackRow { background: %1; border-radius: 8px; }"
     ).arg(active ? Theme::accentRgba(0.32) : QStringLiteral("transparent")));
+    outer->addWidget(inner);
 
-    auto *layout = new QHBoxLayout(row);
-    layout->setContentsMargins(12, 4, 12, 4);
+    auto *layout = new QHBoxLayout(inner);
+    layout->setContentsMargins(12, 6, 12, 6);
     layout->setSpacing(12);
 
     const QString fg = active ? Theme::onAccent().name() : Theme::text().name();
@@ -408,11 +416,13 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
         "color: %1; background: transparent;").arg(fgMuted));
     layout->addWidget(dur);
 
-    // Click to play via transparent overlay button
+    // Click to play via transparent overlay on the padded inner row.
     Track t = track;
-    auto *overlay = new QPushButton(row);
-    overlay->setGeometry(0, 0, 9999, 52);
-    lumen::design::StyleSheet::apply(overlay, "background: transparent; border: none;");
+    auto *overlay = new QPushButton(inner);
+    overlay->setGeometry(0, 0, 9999, 56);
+    lumen::design::StyleSheet::apply(overlay, QStringLiteral(
+        "QPushButton { background: transparent; border: none; }"
+        "QPushButton:hover { background: transparent; }"));
     overlay->setCursor(Qt::PointingHandCursor);
     overlay->lower();
     connect(overlay, &QPushButton::clicked, [this, t]() { emit playRequested(t); });

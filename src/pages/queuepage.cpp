@@ -192,15 +192,23 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
     const int cov = coverSize();
     const int rh = rowHeight();
 
-    // Use QPushButton so :hover QSS works (same pattern as sidebar nav).
-    auto *row = new QPushButton();
+    // Outer shell + padded inner button so accent wash isn't edge-to-edge.
+    auto *shell = new QWidget();
+    shell->setFixedHeight(rh + 6);
+    shell->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    lumen::design::StyleSheet::apply(shell, QStringLiteral("background: transparent;"));
+    auto *shellLay = new QVBoxLayout(shell);
+    shellLay->setContentsMargins(6, 3, 6, 3);
+    shellLay->setSpacing(0);
+
+    auto *row = new QPushButton(shell);
     row->setCursor(Qt::PointingHandCursor);
     row->setFlat(true);
     row->setFixedHeight(rh);
     row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     row->setMinimumWidth(0);
 
-    // Translucent accent wash; labels stay light (onAccent / white) on active+hover.
+    // Translucent accent wash; labels stay light on active+hover.
     if (active) {
         lumen::design::StyleSheet::apply(row, QString(
             "QPushButton { background-color: %1; border: none; border-radius: 8px; text-align: left; }"
@@ -212,9 +220,10 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
             "QPushButton:hover { background-color: %1; }"
         ).arg(Theme::accentRgba(0.22)));
     }
+    shellLay->addWidget(row);
 
     auto *layout = new QHBoxLayout(row);
-    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setContentsMargins(10, 6, 10, 6);
     layout->setSpacing(8);
 
     auto *swatch = new QWidget(row);
@@ -310,7 +319,7 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
         artistLabel->setObjectName(QStringLiteral("queueArtist"));
     }
 
-    return row;
+    return shell;
 }
 
 // Event filter for queue row hover label recolor (inactive rows).
