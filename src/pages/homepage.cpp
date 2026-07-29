@@ -279,7 +279,7 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
 
     // Info
     auto *infoLayout = new QVBoxLayout();
-    infoLayout->setSpacing(1);
+    infoLayout->setSpacing(4);
     auto *title = new QLabel(track.title);
     title->setFont(Theme::bodyFont(13));
     title->setAttribute(Qt::WA_TransparentForMouseEvents);

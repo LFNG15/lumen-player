@@ -135,29 +135,34 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     p->drawPixmap(coverR.topLeft(),
                   lumen::design::paint::gradientRect(c1, c2, swatch, swatch, 6));
 
-    // Title + artist
+    // Title + artist — explicit line gap (half-height split was too tight).
     const QString title = index.data(TrackListModel::TitleRole).toString();
     const QString artist = index.data(TrackListModel::ArtistRole).toString();
     const int textLeft = coverR.right() + 12;
     const int textRight = likeR.left() - 12;
-    const QRect textR(textLeft, option.rect.top() + 6,
-                      qMax(20, textRight - textLeft), option.rect.height() - 12);
+    const int textW = qMax(20, textRight - textLeft);
 
     QFont titleFont = ThemeManager::type().body;
     titleFont.setWeight(QFont::DemiBold);
+    const QFontMetrics tfm(titleFont);
+    const QFontMetrics afm(ThemeManager::type().bodySm);
+    constexpr int kTitleArtistGap = 6;
+    const int titleH = tfm.height();
+    const int artistH = afm.height();
+    const int blockH = titleH + kTitleArtistGap + artistH;
+    const int textTop = option.rect.center().y() - blockH / 2;
+
     p->setFont(titleFont);
     p->setPen(current ? c.accent : c.text);
-    const QFontMetrics tfm(titleFont);
-    p->drawText(QRect(textR.left(), textR.top(), textR.width(), textR.height() / 2),
+    p->drawText(QRect(textLeft, textTop, textW, titleH),
                 Qt::AlignLeft | Qt::AlignVCenter,
-                tfm.elidedText(title, Qt::ElideRight, textR.width()));
+                tfm.elidedText(title, Qt::ElideRight, textW));
 
     p->setFont(ThemeManager::type().bodySm);
     p->setPen(c.muted);
-    const QFontMetrics afm(ThemeManager::type().bodySm);
-    p->drawText(QRect(textR.left(), textR.center().y(), textR.width(), textR.height() / 2),
+    p->drawText(QRect(textLeft, textTop + titleH + kTitleArtistGap, textW, artistH),
                 Qt::AlignLeft | Qt::AlignVCenter,
-                afm.elidedText(artist, Qt::ElideRight, textR.width()));
+                afm.elidedText(artist, Qt::ElideRight, textW));
 
     // Like — always visible if liked; otherwise on hover
     if (liked || hover) {
