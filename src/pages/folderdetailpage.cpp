@@ -407,7 +407,7 @@ void FolderDetailPage::replaceCover(QWidget *cover)
 static void paintLabel(QLabel *lab, const QColor &fg, const QColor &bg)
 {
     if (!lab) return;
-    // Palette only — never call setStyleSheet outside src/design/ (CI gate).
+    // Palette only — QSS styling belongs in src/design/ (CI gate).
     QPalette pal = lab->palette();
     pal.setColor(QPalette::Window, bg);
     pal.setColor(QPalette::WindowText, fg);
