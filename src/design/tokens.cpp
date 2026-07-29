@@ -78,7 +78,7 @@ Metrics buildMetrics(Density density, Mode mode)
         m.windowMargin = 12;
         m.btnPadH = 10;
         m.btnPadV = 5;
-        m.rowHeight = 40;
+        m.rowHeight = 44;
         m.navItemHeight = 38;
     } else {
         m.spacing = 10;
@@ -87,7 +87,8 @@ Metrics buildMetrics(Density density, Mode mode)
         m.windowMargin = 18;
         m.btnPadH = 14;
         m.btnPadV = 8;
-        m.rowHeight = 52;
+        // Tall enough for title+artist + 4px wash inset on top/bottom.
+        m.rowHeight = 58;
         m.navItemHeight = 46;
     }
     m.radiusCard = 10;
