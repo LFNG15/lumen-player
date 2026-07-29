@@ -147,8 +147,8 @@ void LikedPage::rebuildHeader()
     backBtn->setCursor(Qt::PointingHandCursor);
     backBtn->setFont(Theme::iconFont(12));
     lumen::design::StyleSheet::apply(backBtn, QString(
-        "QPushButton { background: rgba(255,255,255,0.05); color: %1; border: none; border-radius: 17px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.1); }"
+        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.1) + "; }"
     ).arg(Theme::text().name()));
     connect(backBtn, &QPushButton::clicked, this, &LikedPage::navigateBack);
     lay->addWidget(backBtn, 0, Qt::AlignLeft);

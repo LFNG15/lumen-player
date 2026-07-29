@@ -88,7 +88,7 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
     m_cancelBtn->setCursor(Qt::PointingHandCursor);
     lumen::design::StyleSheet::apply(m_cancelBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; padding: 0 16px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.05); }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
     connect(m_cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
     btnRow->addWidget(m_cancelBtn);
@@ -102,7 +102,7 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
         "QPushButton { background: %1; color: %2; border: none; border-radius: 18px; padding: 0 20px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
         "QPushButton:disabled { background: %4; color: %5; }"
-    ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name(),
+    ).arg(Theme::accent().name(), Theme::onAccent().name(), Theme::accentHover().name(),
           Theme::border().name(), Theme::textMuted().name()));
     connect(m_startBtn, &QPushButton::clicked, this, &ImportPlaylistDialog::startDownloads);
     btnRow->addWidget(m_startBtn);

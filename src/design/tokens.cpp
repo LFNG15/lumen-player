@@ -132,6 +132,16 @@ Tokens buildTokens(const QString &paletteId, Mode mode, Density density)
         base = deriveHighContrast(pal.dark);
     } else if (mode == Mode::Light) {
         base = pal.light;
+        // Harden light text roles against white cards / pale app bg.
+        base.text  = ensureContrast(base.text,  base.card, 4.5);
+        base.muted = ensureContrast(base.muted, base.card, 4.5);
+        base.faint = ensureContrast(base.faint, base.card, 3.0);
+        base.accent = ensureContrast(base.accent, base.card, 3.0);
+        base.onAccent = ensureContrast(base.onAccent, base.accent, 4.5);
+        base.border = ensureContrast(base.border, base.card, 1.4);
+        // If border still too soft vs card, deepen slightly.
+        if (contrastRatio(base.border, base.card) < 1.4)
+            base.border = base.border.darker(120);
     } else {
         base = pal.dark;
     }

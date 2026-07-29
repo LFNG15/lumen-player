@@ -48,8 +48,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     backBtn->setFixedSize(34, 34);
     backBtn->setCursor(Qt::PointingHandCursor);
     lumen::design::StyleSheet::apply(backBtn, QString(
-        "QPushButton { background: rgba(255,255,255,0.05); color: %1; border: none; border-radius: 17px; font-size: 16px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.1); }"
+        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; font-size: 16px; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.1) + "; }"
     ).arg(Theme::text().name()));
     connect(backBtn, &QPushButton::clicked, this, &AddMusicPage::navigateBack);
     layout->addWidget(backBtn, 0, Qt::AlignLeft);
@@ -103,8 +103,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
         "QPushButton { background: %1; color: %2; border: none; border-radius: 8px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
         "QPushButton:disabled { background: %4; color: %5; }"
-    ).arg(Theme::accent().name(), Theme::bg().name(),
-          Theme::accent().lighter(110).name(),
+    ).arg(Theme::accent().name(), Theme::onAccent().name(),
+          Theme::accentHover().name(),
           Theme::border().name(), Theme::textMuted().name()));
     connect(m_downloadBtn, &QPushButton::clicked, this, &AddMusicPage::startDownload);
     connect(m_urlEdit, &QLineEdit::returnPressed,  this, &AddMusicPage::startDownload);
@@ -201,7 +201,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     m_dropZone->setFixedHeight(180);
     m_dropZone->setCursor(Qt::PointingHandCursor);
     lumen::design::StyleSheet::apply(m_dropZone, QString(
-        "QWidget { border: 2px dashed %1; border-radius: 16px; background: rgba(255,255,255,0.01); }"
+        "QWidget { border: 2px dashed %1; border-radius: 16px; background: " + Theme::hoverBg(0.01) + "; }"
     ).arg(Theme::border().name()));
 
     auto *dropLayout = new QVBoxLayout(m_dropZone);
@@ -314,7 +314,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     lumen::design::StyleSheet::apply(m_addBtn, QString(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 23px; font-weight: bold; padding: 0 32px; }"
         "QPushButton:hover { background: %3; }"
-    ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
+    ).arg(Theme::accent().name(), Theme::onAccent().name(), Theme::accentHover().name()));
     connect(m_addBtn, &QPushButton::clicked, this, &AddMusicPage::addAllToLibrary);
     folderLayout->addSpacing(4);
     folderLayout->addWidget(m_addBtn, 0, Qt::AlignLeft);
@@ -366,7 +366,7 @@ void AddMusicPage::dragEnterEvent(QDragEnterEvent *event) {
 void AddMusicPage::dropEvent(QDropEvent *event) {
     m_isDragOver = false;
     lumen::design::StyleSheet::apply(m_dropZone, QString(
-        "QWidget { border: 2px dashed %1; border-radius: 16px; background: rgba(255,255,255,0.01); }"
+        "QWidget { border: 2px dashed %1; border-radius: 16px; background: " + Theme::hoverBg(0.01) + "; }"
     ).arg(Theme::border().name()));
     m_dropLabel->setText(Lang::tr("Clique ou arraste arquivos de áudio"));
 
@@ -380,7 +380,7 @@ void AddMusicPage::dropEvent(QDropEvent *event) {
 void AddMusicPage::dragLeaveEvent(QDragLeaveEvent *) {
     m_isDragOver = false;
     lumen::design::StyleSheet::apply(m_dropZone, QString(
-        "QWidget { border: 2px dashed %1; border-radius: 16px; background: rgba(255,255,255,0.01); }"
+        "QWidget { border: 2px dashed %1; border-radius: 16px; background: " + Theme::hoverBg(0.01) + "; }"
     ).arg(Theme::border().name()));
     m_dropLabel->setText(Lang::tr("Clique ou arraste arquivos de áudio"));
 }
@@ -521,7 +521,7 @@ void AddMusicPage::refreshFileList() {
         removeBtn->setCursor(Qt::PointingHandCursor);
         lumen::design::StyleSheet::apply(removeBtn, QString(
             "QPushButton { background: transparent; color: %1; border: none; font-size: 14px; border-radius: 14px; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+            "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
         ).arg(Theme::textMuted().name(), Theme::danger().name()));
         QString fileId = pf.id;
         connect(removeBtn, &QPushButton::clicked, [this, fileId]() {

@@ -42,7 +42,7 @@ QueuePage::QueuePage(TrackModel *model, PlayerBar *player, QWidget *parent)
     closeBtn->setToolTip(Lang::tr("Fechar"));
     lumen::design::StyleSheet::apply(closeBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 14px; font-family: \"Segoe MDL2 Assets\"; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::text().name()));
     connect(closeBtn, &QPushButton::clicked, this, &QueuePage::navigateBack);
     headerLayout->addWidget(closeBtn);

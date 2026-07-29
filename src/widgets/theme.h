@@ -89,6 +89,28 @@ inline QColor textMuted()   { return lumen::design::ThemeManager::c().faint; }
 inline QColor border()      { return lumen::design::ThemeManager::c().border; }
 inline QColor danger()      { return lumen::design::ThemeManager::c().danger; }
 inline QColor vinylBlack()  { return lumen::design::ThemeManager::c().vinyl; }
+// Text/icon color on solid accent fills (not bg() — bg is light in light mode).
+inline QColor onAccent()    { return lumen::design::ThemeManager::c().onAccent; }
+
+inline bool isLightMode()
+{
+    return lumen::design::ThemeManager::instance().mode()
+        == lumen::design::Mode::Light;
+}
+
+// Mode-aware wash for hover/press on surfaces (white wash fails on light UI).
+inline QString hoverBg(double alpha = 0.06)
+{
+    if (isLightMode())
+        return QStringLiteral("rgba(0,0,0,%1)").arg(alpha);
+    return QStringLiteral("rgba(255,255,255,%1)").arg(alpha);
+}
+
+// Accent button hover: deepen on light, lift on dark.
+inline QColor accentHover()
+{
+    return isLightMode() ? accent().darker(112) : accent().lighter(110);
+}
 
 inline QString accentRgba(double alpha)
 {

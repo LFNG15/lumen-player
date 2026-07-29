@@ -286,8 +286,8 @@ void FolderDetailPage::setupHeaderUi()
     backBtn->setCursor(Qt::PointingHandCursor);
     backBtn->setFont(Theme::iconFont(12));
     lumen::design::StyleSheet::apply(backBtn, QString(
-        "QPushButton { background: rgba(255,255,255,0.05); color: %1; border: none; border-radius: 17px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.1); }"
+        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.1) + "; }"
     ).arg(Theme::text().name()));
     connect(backBtn, &QPushButton::clicked, this, &FolderDetailPage::navigateBack);
     lay->addWidget(backBtn, 0, Qt::AlignLeft);
@@ -560,14 +560,14 @@ void FolderDetailPage::showEditDialog()
     btn1->setFixedSize(60, 32);
     btn1->setCursor(Qt::PointingHandCursor);
     lumen::design::StyleSheet::apply(btn1, QString(
-        "background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;"
+        "background: %1; border: 2px solid " + Theme::hoverBg(0.3) + "; border-radius: 6px; color: white;"
     ).arg(c1->name()));
     connect(btn1, &QPushButton::clicked, dlg, [btn1, c1, updatePrev, dlg]() {
         QColor chosen = QColorDialog::getColor(*c1, dlg, Lang::tr("Cor 1"));
         if (chosen.isValid()) {
             *c1 = chosen;
             lumen::design::StyleSheet::apply(btn1, QString(
-                "background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;"
+                "background: %1; border: 2px solid " + Theme::hoverBg(0.3) + "; border-radius: 6px; color: white;"
             ).arg(c1->name()));
             updatePrev();
         }
@@ -578,14 +578,14 @@ void FolderDetailPage::showEditDialog()
     btn2->setFixedSize(60, 32);
     btn2->setCursor(Qt::PointingHandCursor);
     lumen::design::StyleSheet::apply(btn2, QString(
-        "background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;"
+        "background: %1; border: 2px solid " + Theme::hoverBg(0.3) + "; border-radius: 6px; color: white;"
     ).arg(c2->name()));
     connect(btn2, &QPushButton::clicked, dlg, [btn2, c2, updatePrev, dlg]() {
         QColor chosen = QColorDialog::getColor(*c2, dlg, Lang::tr("Cor 2"));
         if (chosen.isValid()) {
             *c2 = chosen;
             lumen::design::StyleSheet::apply(btn2, QString(
-                "background: %1; border: 2px solid rgba(255,255,255,0.3); border-radius: 6px; color: white;"
+                "background: %1; border: 2px solid " + Theme::hoverBg(0.3) + "; border-radius: 6px; color: white;"
             ).arg(c2->name()));
             updatePrev();
         }

@@ -95,7 +95,7 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         lumen::design::StyleSheet::apply(addBtn, QString(
             "QPushButton { background-color: %1; color: %2; border: none; border-radius: 22px; font-weight: bold; }"
             "QPushButton:hover { background-color: %3; }"
-        ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
+        ).arg(Theme::accent().name(), Theme::onAccent().name(), Theme::accentHover().name()));
         connect(addBtn, &QPushButton::clicked, [this]() { emit navigateTo("add"); });
         emptyLayout->addWidget(addBtn, 0, Qt::AlignCenter);
 

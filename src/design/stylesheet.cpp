@@ -48,6 +48,14 @@ QString StyleSheet::build(const Tokens &t)
     const auto &c = t.color;
     const auto &m = t.metric;
     const int bw = m.borderWidth;
+    // Light mode: accent hover should deepen, not wash out further.
+    const QString accentHover = (t.mode == Mode::Light)
+        ? c.accent.darker(112).name()
+        : c.accent.lighter(110).name();
+    // Surface hover: black wash on light, white wash on dark.
+    const QString surfaceHover = (t.mode == Mode::Light)
+        ? QStringLiteral("rgba(0,0,0,0.06)")
+        : QStringLiteral("rgba(255,255,255,0.06)");
 
     return QStringLiteral(R"(
         /* --- Global chrome (Lumen design system) --- */
@@ -248,10 +256,11 @@ QString StyleSheet::build(const Tokens &t)
              QString::number(m.radiusWidget),       // %12
              QString::number(m.btnPadV),            // %13
              QString::number(bw),                   // %14
-             c.accent.lighter(110).name(),          // %15
+             accentHover,                           // %15
              c.faint.name(),                        // %16
              c.input.name(),                        // %17
              accentRgba(t, 0.15));                  // %18
+    Q_UNUSED(surfaceHover);
 }
 
 } // namespace lumen::design

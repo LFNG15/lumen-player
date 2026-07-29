@@ -87,7 +87,7 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
         "QPushButton { background-color: %1; color: %2; border: none; border-radius: 19px; "
         "font-size: 16px; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { background-color: %3; }"
-    ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
+    ).arg(Theme::accent().name(), Theme::onAccent().name(), Theme::accentHover().name()));
 
     btnLayout->addWidget(m_shuffleBtn);
     btnLayout->addWidget(m_prevBtn);
@@ -135,7 +135,7 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     m_queueBtn->setToolTip(Lang::tr("Fila de reprodução"));
     lumen::design::StyleSheet::apply(m_queueBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 4px; }"
-        "QPushButton:hover { color: %2; background: rgba(255,255,255,0.05); }"
+        "QPushButton:hover { color: %2; background: " + Theme::hoverBg(0.05) + "; }"
     ).arg(Theme::textMuted().name(), Theme::textSoft().name()));
 
     m_volIcon = new QPushButton(QStringLiteral("\uE15D"), this);
@@ -144,7 +144,7 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     m_volIcon->setFont(Theme::iconFont(14));
     lumen::design::StyleSheet::apply(m_volIcon, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 4px; }"
-        "QPushButton:hover { color: %2; background: rgba(255,255,255,0.05); }"
+        "QPushButton:hover { color: %2; background: " + Theme::hoverBg(0.05) + "; }"
     ).arg(Theme::textMuted().name(), Theme::textSoft().name()));
 
     m_volumeSlider = new ClickableSlider(Qt::Horizontal, this);
@@ -373,32 +373,35 @@ void PlayerBar::updateVolIcon()
 QString PlayerBar::buttonStyle(bool active) const
 {
     const QString color = active ? Theme::accent().name() : Theme::textMuted().name();
-    const QString hover = active ? Theme::accent().lighter(110).name() : Theme::textSoft().name();
+    const QString hover = active ? Theme::accentHover().name() : Theme::textSoft().name();
     return QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 16px; "
         "font-size: 14px; font-family: \"Segoe MDL2 Assets\"; }"
-        "QPushButton:hover { color: %2; background: rgba(255,255,255,0.05); }"
-    ).arg(color, hover);
+        "QPushButton:hover { color: %2; background: %3; }"
+    ).arg(color, hover, Theme::hoverBg(0.05));
 }
 
 QString PlayerBar::sliderStyle(const QString &accentColor) const
 {
-    return QString(R"(
-        QSlider::groove:horizontal {
-            height: 4px;
-            background: rgba(255,255,255,0.08);
-            border-radius: 2px;
-        }
-        QSlider::handle:horizontal {
-            background: %2;
-            width: 12px; height: 12px;
-            margin: -4px 0;
-            border-radius: 6px;
-        }
-        QSlider::handle:horizontal:hover { background: #f0ece4; }
-        QSlider::sub-page:horizontal {
-            background: %1;
-            border-radius: 2px;
-        }
-    )").arg(accentColor, Theme::text().name());
+    return QStringLiteral(
+        "QSlider::groove:horizontal {"
+        "  height: 4px;"
+        "  background: %3;"
+        "  border-radius: 2px;"
+        "}"
+        "QSlider::handle:horizontal {"
+        "  background: %2;"
+        "  width: 12px; height: 12px;"
+        "  margin: -4px 0;"
+        "  border-radius: 6px;"
+        "}"
+        "QSlider::handle:horizontal:hover { background: %4; }"
+        "QSlider::sub-page:horizontal {"
+        "  background: %1;"
+        "  border-radius: 2px;"
+        "}"
+    ).arg(accentColor,
+          Theme::text().name(),
+          Theme::hoverBg(0.10),
+          Theme::textSoft().name());
 }

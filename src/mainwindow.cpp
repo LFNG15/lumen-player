@@ -544,7 +544,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_collapseBtn->setFont(Theme::iconFont(10));
     lumen::design::StyleSheet::apply(m_collapseBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 12px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::text().name()));
     connect(m_collapseBtn, &QPushButton::clicked, this, [this]() {
         applySidebarCollapsed(!m_sidebarCollapsed);
@@ -570,7 +570,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         btn->setProperty("navText", text);
         lumen::design::StyleSheet::apply(btn, QString(
             "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; text-align: left; padding-left: 14px; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.05); color: %2; }"
+            "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; color: %2; }"
         ).arg(Theme::textSoft().name(), Theme::text().name()));
         return btn;
     };
@@ -612,7 +612,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         btn->setToolTip(tip);
         lumen::design::StyleSheet::apply(btn, QString(
             "QPushButton { background: transparent; color: %1; border: none; border-radius: 12px; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+            "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
         ).arg(Theme::textMuted().name(), Theme::text().name()));
         return btn;
     };
@@ -687,7 +687,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_langBtn->setToolTip(Lang::tr("Idioma"));
     lumen::design::StyleSheet::apply(m_langBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; font-weight: bold; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::accent().name()));
     connect(m_langBtn, &QPushButton::clicked, this, &MainWindow::showLanguagePicker);
     footerLayout->addWidget(m_langBtn);
@@ -699,7 +699,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     themeBtn->setToolTip(Lang::tr("Escolher tema"));
     lumen::design::StyleSheet::apply(themeBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::accent().name()));
     connect(themeBtn, &QPushButton::clicked, this, &MainWindow::showThemePicker);
     footerLayout->addWidget(themeBtn);
@@ -796,7 +796,7 @@ void MainWindow::refreshSidebarFolders() {
     auto rowStyle = [](bool active) {
         return QString(
             "QPushButton { background: %1; border: none; border-radius: 8px; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.05); }"
+            "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; }"
         ).arg(active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"));
     };
 
@@ -992,7 +992,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     cancelBtn->setCursor(Qt::PointingHandCursor);
     lumen::design::StyleSheet::apply(cancelBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; padding: 0 16px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.05); }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
     connect(cancelBtn, &QPushButton::clicked, dlg, &QDialog::reject);
     btnRow->addWidget(cancelBtn);
@@ -1004,7 +1004,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     lumen::design::StyleSheet::apply(saveBtn, QString(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 18px; padding: 0 20px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
-    ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
+    ).arg(Theme::accent().name(), Theme::onAccent().name(), Theme::accentHover().name()));
     connect(saveBtn, &QPushButton::clicked, [this, dlg, titleEdit, artistEdit, id]() {
         QString title = titleEdit->text().trimmed();
         if (title.isEmpty()) return;
@@ -1112,7 +1112,7 @@ void MainWindow::navigateTo(const QString &page, const QString &data) {
         }
         return QString(
             "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; " + align + " }"
-            "QPushButton:hover { background: rgba(255,255,255,0.05); color: %2; }"
+            "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; color: %2; }"
         ).arg(Theme::textSoft().name(), Theme::text().name());
     };
 
