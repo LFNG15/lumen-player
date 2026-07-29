@@ -146,7 +146,7 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     titleFont.setWeight(QFont::DemiBold);
     const QFontMetrics tfm(titleFont);
     const QFontMetrics afm(ThemeManager::type().bodySm);
-    constexpr int kTitleArtistGap = 6;
+    constexpr int kTitleArtistGap = 3;
     const int titleH = tfm.height();
     const int artistH = afm.height();
     const int blockH = titleH + kTitleArtistGap + artistH;
