@@ -85,25 +85,16 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     const bool current = index.data(TrackListModel::IsCurrentRole).toBool();
     const bool playing = index.data(TrackListModel::IsPlayingRole).toBool();
     const bool liked = index.data(TrackListModel::LikedRole).toBool();
+    // Same chrome as sidebar nav: solid accent + onAccent (white) text.
+    const bool accentRow = current || hover;
 
     // Background
-    QColor bg = Qt::transparent;
-    if (current)
-        bg = c.accent;
-    else if (selected)
-        bg = c.cardHover;
-    else if (hover)
-        bg = c.card;
-
-    if (current) {
-        bg.setAlpha(31); // ~12% of 255
-        p->fillRect(option.rect.adjusted(2, 1, -2, -1), bg);
-        // Accent bar on the left
-        p->fillRect(QRect(option.rect.left() + 2, option.rect.top() + 6,
-                          3, option.rect.height() - 12), c.accent);
-    } else if (bg.alpha() > 0) {
-        p->setPen(Qt::NoPen);
-        p->setBrush(bg);
+    p->setPen(Qt::NoPen);
+    if (accentRow) {
+        p->setBrush(hover && !current ? c.accent.lighter(105) : c.accent);
+        p->drawRoundedRect(option.rect.adjusted(2, 1, -2, -1), 8, 8);
+    } else if (selected) {
+        p->setBrush(c.cardHover);
         p->drawRoundedRect(option.rect.adjusted(2, 1, -2, -1), 8, 8);
     }
 
@@ -116,11 +107,11 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     p->setFont(ThemeManager::type().mono);
     if (hover || playing) {
         p->setFont(ThemeManager::type().icon);
-        p->setPen(c.accent);
+        p->setPen(accentRow ? c.onAccent : c.accent);
         p->drawText(playR, Qt::AlignCenter,
                     playing ? Icons::pause() : Icons::play());
     } else {
-        p->setPen(current ? c.accent : c.faint);
+        p->setPen(current ? c.onAccent : c.faint);
         p->drawText(playR, Qt::AlignCenter,
                     index.data(TrackListModel::IndexLabelRole).toString());
     }
@@ -152,14 +143,20 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     const int blockH = titleH + kTitleArtistGap + artistH;
     const int textTop = option.rect.center().y() - blockH / 2;
 
+    const QColor titleColor = accentRow ? c.onAccent : c.text;
+    const QColor artistColor = accentRow ? QColor(c.onAccent.red(), c.onAccent.green(),
+                                                  c.onAccent.blue(), 210)
+                                         : c.muted;
+    const QColor iconColor = accentRow ? c.onAccent : c.faint;
+
     p->setFont(titleFont);
-    p->setPen(current ? c.accent : c.text);
+    p->setPen(titleColor);
     p->drawText(QRect(textLeft, textTop, textW, titleH),
                 Qt::AlignLeft | Qt::AlignVCenter,
                 tfm.elidedText(title, Qt::ElideRight, textW));
 
     p->setFont(ThemeManager::type().bodySm);
-    p->setPen(c.muted);
+    p->setPen(artistColor);
     p->drawText(QRect(textLeft, textTop + titleH + kTitleArtistGap, textW, artistH),
                 Qt::AlignLeft | Qt::AlignVCenter,
                 afm.elidedText(artist, Qt::ElideRight, textW));
@@ -167,7 +164,7 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     // Like — always visible if liked; otherwise on hover
     if (liked || hover) {
         p->setFont(ThemeManager::type().icon);
-        p->setPen(liked ? c.accent : c.faint);
+        p->setPen(accentRow ? c.onAccent : (liked ? c.accent : c.faint));
         p->drawText(likeR, Qt::AlignCenter,
                     liked ? Icons::heart() : Icons::heartOutline());
     }
@@ -175,9 +172,7 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     // Duration — always
     const qint64 ms = index.data(TrackListModel::DurationRole).toLongLong();
     p->setFont(ThemeManager::type().mono);
-    p->setPen(c.faint);
-    const QRect durR = zoneRect(Zone::Like, option).adjusted(0, 0, 0, 0);
-    Q_UNUSED(durR);
+    p->setPen(iconColor);
     // Duration sits between like and more — recompute from zoneRect layout.
     const QRect more = moreR;
     const QRect dur(more.left() - 8 - 44, option.rect.top(), 44, option.rect.height());
@@ -186,7 +181,7 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     // "+" add affordance on hover (queue / playlist menu)
     if (hover) {
         p->setFont(ThemeManager::type().icon);
-        p->setPen(c.faint);
+        p->setPen(iconColor);
         p->drawText(moreR, Qt::AlignCenter, Icons::add());
     }
 

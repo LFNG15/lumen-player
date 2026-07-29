@@ -106,8 +106,8 @@ MainWindow::MainWindow(QWidget *parent)
     // the stack, and is toggled by the player bar's queue button. It needs
     // the player bar to read the live queue.
     m_queuePage = new QueuePage(m_model, m_playerBar, this);
-    m_queuePage->setMinimumWidth(220);
-    m_queuePage->setMaximumWidth(420);
+    m_queuePage->setMinimumWidth(180);
+    m_queuePage->setMaximumWidth(480);
     m_queuePage->hide();
     m_splitter->addWidget(m_queuePage);
     m_splitter->setStretchFactor(2, 0);
@@ -269,12 +269,20 @@ MainWindow::MainWindow(QWidget *parent)
         } else {
             m_queuePage->refresh(m_playerBar->currentTrackId(), m_playerBar->isPlaying());
             m_queuePage->show();
-            // Open at the width the user last dragged it to.
-            const int queueW = QSettings().value("queueWidth", 280).toInt();
+            // Responsive default width: ~28% of window, clamped; restore last drag.
+            const int winW = qMax(720, width());
+            const int defW = qBound(200, winW / 4 + 40, 360);
+            int queueW = QSettings().value("queueWidth", defW).toInt();
+            queueW = qBound(180, queueW, qMin(480, winW / 2));
+            m_queuePage->setMinimumWidth(180);
+            m_queuePage->setMaximumWidth(qMin(480, qMax(220, winW / 2)));
             auto sizes = m_splitter->sizes();
             if (sizes.size() == 3) {
                 const int total = sizes[0] + sizes[1] + sizes[2];
-                m_splitter->setSizes({sizes[0], qMax(340, total - sizes[0] - queueW), queueW});
+                const int contentMin = qMax(280, winW / 3);
+                queueW = qMin(queueW, total - sizes[0] - contentMin);
+                queueW = qMax(180, queueW);
+                m_splitter->setSizes({sizes[0], total - sizes[0] - queueW, queueW});
             }
         }
     });
@@ -1098,15 +1106,21 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
         // leave expanded — but clamp queue so content keeps ≥ 320px.
     }
     if (m_queuePage && m_queuePage->isVisible()) {
-        const int queueMax = qBound(180, w / 4, 420);
+        const int queueMax = qBound(200, w / 3, 480);
+        const int queueMin = w < 900 ? 180 : 200;
         m_queuePage->setMaximumWidth(queueMax);
-        m_queuePage->setMinimumWidth(qMin(200, queueMax));
+        m_queuePage->setMinimumWidth(queueMin);
         auto sizes = m_splitter->sizes();
-        if (sizes.size() >= 3 && sizes[2] > queueMax) {
-            const int delta = sizes[2] - queueMax;
-            sizes[2] = queueMax;
-            if (sizes.size() > 1) sizes[1] += delta;
-            m_splitter->setSizes(sizes);
+        if (sizes.size() >= 3) {
+            int q = sizes[2];
+            if (q > queueMax) q = queueMax;
+            if (q < queueMin) q = queueMin;
+            if (q != sizes[2]) {
+                const int delta = sizes[2] - q;
+                sizes[2] = q;
+                sizes[1] = qMax(260, sizes[1] + delta);
+                m_splitter->setSizes(sizes);
+            }
         }
     }
     // Content pane floor

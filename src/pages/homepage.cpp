@@ -249,26 +249,29 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     row->setObjectName("trackRow");
     row->setFixedHeight(52);
     row->setCursor(Qt::PointingHandCursor);
+    // Active: solid accent + onAccent text (same as nav / playlist rows).
     lumen::design::StyleSheet::apply(row, QString(
-        "QWidget#trackRow { background: %1; border-radius: 8px; border-left: 3px solid %2; }"
-    ).arg(
-        active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"),
-        active ? Theme::accent().name() : "transparent"
-    ));
+        "QWidget#trackRow { background: %1; border-radius: 8px; }"
+    ).arg(active ? Theme::accent().name() : QStringLiteral("transparent")));
 
     auto *layout = new QHBoxLayout(row);
     layout->setContentsMargins(12, 4, 12, 4);
     layout->setSpacing(12);
 
-    // Index — shows a play glyph on hover (and on the active row)
+    const QString fg = active ? Theme::onAccent().name() : Theme::text().name();
+    const QString fgSoft = active ? Theme::onAccent().name() : Theme::textSoft().name();
+    const QString fgMuted = active ? Theme::onAccent().name() : Theme::textMuted().name();
+
+    // Index — shows a play glyph on the active row
     QString idxNum = QString("%1").arg(index + 1, 2, 10, QChar('0'));
     auto *idx = new QLabel(active ? QStringLiteral("\uE102") : idxNum);
     idx->setFont(Theme::monoFont(12));
     idx->setFixedWidth(28);
     idx->setAlignment(Qt::AlignCenter);
-    lumen::design::StyleSheet::apply(idx, QString("color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;").arg(
-        active ? Theme::accent().name() : Theme::textMuted().name()));
-    idx->setAttribute(Qt::WA_TransparentForMouseEvents);  // let clicks reach the play overlay
+    lumen::design::StyleSheet::apply(idx, QString(
+        "color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;"
+    ).arg(active ? Theme::onAccent().name() : Theme::textMuted().name()));
+    idx->setAttribute(Qt::WA_TransparentForMouseEvents);
     layout->addWidget(idx);
 
     // Cover swatch
@@ -285,15 +288,17 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     auto *title = new QLabel(track.title);
     title->setFont(Theme::bodyFont(13));
     title->setAttribute(Qt::WA_TransparentForMouseEvents);
-    lumen::design::StyleSheet::apply(title, QString("color: %1; background: transparent; font-weight: 600;").arg(
-        active ? Theme::accent().name() : Theme::text().name()));
+    lumen::design::StyleSheet::apply(title, QString(
+        "color: %1; background: transparent; font-weight: 600;").arg(fg));
     auto *artist = new QLabel(track.artist);
     artist->setFont(Theme::bodyFont(11));
     artist->setAttribute(Qt::WA_TransparentForMouseEvents);
-    lumen::design::StyleSheet::apply(artist, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(artist, QString(
+        "color: %1; background: transparent;").arg(fgSoft));
     infoLayout->addWidget(title);
     infoLayout->addWidget(artist);
     layout->addLayout(infoLayout, 1);
+    Q_UNUSED(isPlaying);
 
     // Folder tag — clickable, navigates to the playlist
     if (!track.folder.isEmpty()) {
@@ -301,10 +306,17 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
         tag->setFont(Theme::bodyFont(10));
         tag->setCursor(Qt::PointingHandCursor);
         tag->setToolTip(QString(Lang::tr("Ir para a playlist \"%1\"")).arg(track.folder));
-        lumen::design::StyleSheet::apply(tag, QString(
-            "QPushButton { color: %1; background: " + Theme::accentRgba(0.10) + "; border: none; border-radius: 10px; padding: 2px 8px; }"
-            "QPushButton:hover { background: " + Theme::accentRgba(0.28) + "; color: %2; }"
-        ).arg(Theme::accentDim().name(), Theme::text().name()));
+        if (active) {
+            lumen::design::StyleSheet::apply(tag, QString(
+                "QPushButton { color: %1; background: " + Theme::hoverBg(0.15) + "; border: none; border-radius: 10px; padding: 2px 8px; }"
+                "QPushButton:hover { background: " + Theme::hoverBg(0.22) + "; }"
+            ).arg(Theme::onAccent().name()));
+        } else {
+            lumen::design::StyleSheet::apply(tag, QString(
+                "QPushButton { color: %1; background: " + Theme::accentRgba(0.10) + "; border: none; border-radius: 10px; padding: 2px 8px; }"
+                "QPushButton:hover { background: " + Theme::accentRgba(0.28) + "; color: %2; }"
+            ).arg(Theme::accentDim().name(), Theme::text().name()));
+        }
         QString folderName = track.folder;
         connect(tag, &QPushButton::clicked, [this, folderName]() { emit navigateTo("folder", folderName); });
         layout->addWidget(tag);
@@ -318,7 +330,7 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     lumen::design::StyleSheet::apply(addBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; font-size: 13px; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { color: %2; }"
-    ).arg(Theme::textMuted().name(), Theme::accent().name()));
+    ).arg(fgMuted, active ? Theme::onAccent().name() : Theme::accent().name()));
     const int addId = track.id;
     connect(addBtn, &QPushButton::clicked, this, [this, addId]() {
         m_ctx->popupAddMenu({addId}, QCursor::pos());
@@ -332,7 +344,9 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     lumen::design::StyleSheet::apply(likeBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; font-size: 14px; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { color: %2; }"
-    ).arg(track.liked ? Theme::accent().name() : Theme::textMuted().name(), Theme::accent().name()));
+    ).arg(active || track.liked ? (active ? Theme::onAccent().name() : Theme::accent().name())
+                                : Theme::textMuted().name(),
+          active ? Theme::onAccent().name() : Theme::accent().name()));
     int likeId = track.id;
     connect(likeBtn, &QPushButton::clicked, [this, likeId]() { emit likeToggled(likeId); });
     layout->addWidget(likeBtn);
@@ -346,7 +360,7 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     lumen::design::StyleSheet::apply(editBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { color: %2; }"
-    ).arg(Theme::textMuted().name(), Theme::accent().name()));
+    ).arg(fgMuted, active ? Theme::onAccent().name() : Theme::accent().name()));
     Track et = track;
     connect(editBtn, &QPushButton::clicked, [this, et]() { emit editTrackRequested(et); });
     layout->addWidget(editBtn);
@@ -360,7 +374,7 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     lumen::design::StyleSheet::apply(delBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { color: %2; }"
-    ).arg(Theme::textMuted().name(), Theme::danger().name()));
+    ).arg(fgMuted, Theme::danger().name()));
     int delId = track.id;
     connect(delBtn, &QPushButton::clicked, [this, delId]() { emit deleteRequested(delId); });
     layout->addWidget(delBtn);
@@ -370,7 +384,8 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     dur->setFont(Theme::monoFont(11));
     dur->setFixedWidth(40);
     dur->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    lumen::design::StyleSheet::apply(dur, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(dur, QString(
+        "color: %1; background: transparent;").arg(fgMuted));
     layout->addWidget(dur);
 
     // Click to play via transparent overlay button
