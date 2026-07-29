@@ -13,10 +13,8 @@ TrackContextMenu::TrackContextMenu(TrackModel *model, QWidget *parent)
 {
 }
 
-void TrackContextMenu::popup(const QList<int> &trackIds, const QPoint &globalPos)
+QMenu *TrackContextMenu::makeStyledMenu() const
 {
-    if (!m_model || trackIds.isEmpty()) return;
-
     auto *menu = new QMenu(m_parent);
     lumen::design::StyleSheet::apply(menu, QStringLiteral(
         "QMenu { background: %1; border: 1px solid %2; border-radius: 8px; padding: 4px; color: %3; }"
@@ -25,6 +23,25 @@ void TrackContextMenu::popup(const QList<int> &trackIds, const QPoint &globalPos
         "QMenu::separator { height: 1px; background: %2; margin: 4px 0; }"
     ).arg(Theme::card().name(), Theme::border().name(), Theme::text().name(),
           Theme::cardHover().name()));
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    return menu;
+}
+
+void TrackContextMenu::addEnqueueAction(QMenu *menu, const QList<int> &trackIds)
+{
+    menu->addAction(Lang::tr("Adicionar à fila"), this, [this, trackIds]() {
+        for (int id : trackIds) {
+            if (Track *t = m_model->findTrack(id))
+                emit enqueueRequested(*t);
+        }
+    });
+}
+
+void TrackContextMenu::popup(const QList<int> &trackIds, const QPoint &globalPos)
+{
+    if (!m_model || trackIds.isEmpty()) return;
+
+    auto *menu = makeStyledMenu();
 
     const int primaryId = trackIds.first();
     Track *primary = m_model->findTrack(primaryId);
@@ -33,9 +50,7 @@ void TrackContextMenu::popup(const QList<int> &trackIds, const QPoint &globalPos
         menu->addAction(Lang::tr("Tocar"), this, [this, primary]() {
             emit playRequested(*primary);
         });
-        menu->addAction(Lang::tr("Adicionar à fila"), this, [this, primary]() {
-            emit enqueueRequested(*primary);
-        });
+        addEnqueueAction(menu, trackIds);
         menu->addSeparator();
 
         const bool liked = primary->liked;
@@ -54,13 +69,7 @@ void TrackContextMenu::popup(const QList<int> &trackIds, const QPoint &globalPos
             emit deleteRequested(primaryId);
         });
     } else {
-        // Multi-selection: batch-friendly actions only.
-        menu->addAction(Lang::tr("Adicionar à fila"), this, [this, trackIds]() {
-            for (int id : trackIds) {
-                if (Track *t = m_model->findTrack(id))
-                    emit enqueueRequested(*t);
-            }
-        });
+        addEnqueueAction(menu, trackIds);
         addToPlaylistSubmenu(menu, trackIds);
         menu->addSeparator();
         menu->addAction(Lang::tr("Excluir"), this, [this, trackIds]() {
@@ -69,7 +78,16 @@ void TrackContextMenu::popup(const QList<int> &trackIds, const QPoint &globalPos
         });
     }
 
-    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->popup(globalPos.isNull() ? QCursor::pos() : globalPos);
+}
+
+void TrackContextMenu::popupAddMenu(const QList<int> &trackIds, const QPoint &globalPos)
+{
+    if (!m_model || trackIds.isEmpty()) return;
+
+    auto *menu = makeStyledMenu();
+    addEnqueueAction(menu, trackIds);
+    addToPlaylistSubmenu(menu, trackIds);
     menu->popup(globalPos.isNull() ? QCursor::pos() : globalPos);
 }
 

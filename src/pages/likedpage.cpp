@@ -62,7 +62,15 @@ LikedPage::LikedPage(TrackModel *model, QWidget *parent)
         if (id > 0) emit likeToggled(id);
     });
     connect(m_delegate, &TrackRowDelegate::moreClicked, this,
-            [this](const QModelIndex &, const QPoint &gp) { showContext(gp); });
+            [this](const QModelIndex &idx, const QPoint &gp) {
+        QList<int> ids = selectedIds();
+        if (ids.isEmpty()) {
+            const int id = m_listModel->trackIdAt(idx.row());
+            if (id > 0) ids.append(id);
+        }
+        if (!ids.isEmpty())
+            m_ctx->popupAddMenu(ids, gp);
+    });
     connect(m_view, &QListView::customContextMenuRequested, this, [this](const QPoint &pos) {
         showContext(m_view->viewport()->mapToGlobal(pos));
     });

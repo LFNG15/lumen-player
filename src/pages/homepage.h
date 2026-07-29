@@ -6,6 +6,8 @@
 #include <QScrollArea>
 #include "trackmodel.h"
 
+class TrackContextMenu;
+
 class HomePage : public QWidget {
     Q_OBJECT
 public:
@@ -27,6 +29,7 @@ private:
     QWidget *createRecentCard(const Folder &folder);
 
     TrackModel *m_model;
+    TrackContextMenu *m_ctx = nullptr;
     QVBoxLayout *m_contentLayout;
     QScrollArea *m_scroll;
 };

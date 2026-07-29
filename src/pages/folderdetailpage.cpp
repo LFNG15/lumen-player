@@ -27,6 +27,7 @@
 #include <QShortcut>
 #include <QCursor>
 #include <QFrame>
+#include <QPalette>
 #include <algorithm>
 
 namespace Icons = lumen::design::Icons;
@@ -122,9 +123,17 @@ FolderDetailPage::FolderDetailPage(TrackModel *model, QWidget *parent)
         const int id = m_listModel->trackIdAt(src.row());
         if (id > 0) emit likeToggled(id);
     });
+    // "⋯" / add affordance: queue + playlist (full menu stays on right-click).
     connect(m_delegate, &TrackRowDelegate::moreClicked, this,
-            [this](const QModelIndex &, const QPoint &gp) {
-        showContextForSelection(gp);
+            [this](const QModelIndex &proxyIdx, const QPoint &gp) {
+        QList<int> ids = selectedTrackIds();
+        if (ids.isEmpty()) {
+            const QModelIndex src = m_proxy->mapToSource(proxyIdx);
+            const int id = m_listModel->trackIdAt(src.row());
+            if (id > 0) ids.append(id);
+        }
+        if (!ids.isEmpty())
+            m_ctx->popupAddMenu(ids, gp);
     });
 
     connect(m_view, &QListView::customContextMenuRequested, this, [this](const QPoint &pos) {
@@ -296,25 +305,24 @@ void FolderDetailPage::setupHeaderUi()
     info->setSpacing(4);
     info->addStretch();
 
+    // IMPORTANT: do not style these QLabels with "background: transparent".
+    // Qt then skips erasing the previous glyphs on setText(), so playlist
+    // names stack (TESTE B under Teste C). Palette + solid fill is safe.
     m_typeLabel = new QLabel(m_header);
     m_typeLabel->setFont(Theme::bodyFont(10));
-    lumen::design::StyleSheet::apply(m_typeLabel, QString(
-        "color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;"
-    ).arg(Theme::textMuted().name()));
+    m_typeLabel->setAutoFillBackground(true);
     info->addWidget(m_typeLabel);
 
     m_nameLabel = new QLabel(m_header);
     m_nameLabel->setFont(Theme::titleFont(28));
     m_nameLabel->setWordWrap(true);
     m_nameLabel->setTextInteractionFlags(Qt::NoTextInteraction);
-    lumen::design::StyleSheet::apply(m_nameLabel, QString(
-        "color: %1; background: transparent;").arg(Theme::text().name()));
+    m_nameLabel->setAutoFillBackground(true);
     info->addWidget(m_nameLabel);
 
     m_statsLabel = new QLabel(m_header);
     m_statsLabel->setFont(Theme::bodyFont(12));
-    lumen::design::StyleSheet::apply(m_statsLabel, QString(
-        "color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    m_statsLabel->setAutoFillBackground(true);
     info->addWidget(m_statsLabel);
     info->addStretch();
     headerRow->addLayout(info, 1);
@@ -396,12 +404,31 @@ void FolderDetailPage::replaceCover(QWidget *cover)
     }
 }
 
+static void paintLabel(QLabel *lab, const QColor &fg, const QColor &bg)
+{
+    if (!lab) return;
+    lab->setStyleSheet(QString()); // clear any leftover QSS
+    QPalette pal = lab->palette();
+    pal.setColor(QPalette::Window, bg);
+    pal.setColor(QPalette::WindowText, fg);
+    pal.setColor(QPalette::Text, fg);
+    lab->setPalette(pal);
+    lab->setAutoFillBackground(true);
+}
+
 void FolderDetailPage::updateHeader()
 {
     const bool isStandalone = m_folderName.isEmpty();
     const auto tracks = displayedTracks();
+    const QColor pageBg = Theme::bg();
+
+    paintLabel(m_typeLabel, Theme::textMuted(), pageBg);
+    paintLabel(m_nameLabel, Theme::text(), pageBg);
+    paintLabel(m_statsLabel, Theme::textSoft(), pageBg);
 
     m_typeLabel->setText(isStandalone ? Lang::tr("MÚSICAS AVULSAS") : Lang::tr("PLAYLIST"));
+    // Clear first so any residual buffer is wiped before the new name.
+    m_nameLabel->clear();
     m_nameLabel->setText(isStandalone ? Lang::tr("Músicas avulsas") : m_folderName);
 
     qint64 totalMs = 0;

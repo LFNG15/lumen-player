@@ -178,11 +178,11 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     const QRect dur(more.left() - 8 - 44, option.rect.top(), 44, option.rect.height());
     p->drawText(dur, Qt::AlignRight | Qt::AlignVCenter, Theme::formatTime(ms));
 
-    // More ⋯ on hover
+    // "+" add affordance on hover (queue / playlist menu)
     if (hover) {
         p->setFont(ThemeManager::type().icon);
         p->setPen(c.faint);
-        p->drawText(moreR, Qt::AlignCenter, Icons::more());
+        p->drawText(moreR, Qt::AlignCenter, Icons::add());
     }
 
     p->restore();

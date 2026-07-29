@@ -81,7 +81,21 @@ SearchPage::SearchPage(TrackModel *model, QWidget *parent)
         if (id > 0) emit likeToggled(id);
     });
     connect(m_delegate, &TrackRowDelegate::moreClicked, this,
-            [this](const QModelIndex &, const QPoint &gp) { showContext(gp); });
+            [this](const QModelIndex &px, const QPoint &gp) {
+        QList<int> ids;
+        for (const QModelIndex &sel : m_view->selectionModel()->selectedRows()) {
+            const QModelIndex src = m_proxy->mapToSource(sel);
+            const int id = m_listModel->trackIdAt(src.row());
+            if (id > 0) ids.append(id);
+        }
+        if (ids.isEmpty()) {
+            const QModelIndex src = m_proxy->mapToSource(px);
+            const int id = m_listModel->trackIdAt(src.row());
+            if (id > 0) ids.append(id);
+        }
+        if (!ids.isEmpty())
+            m_ctx->popupAddMenu(ids, gp);
+    });
     connect(m_view, &QListView::customContextMenuRequested, this, [this](const QPoint &pos) {
         showContext(m_view->viewport()->mapToGlobal(pos));
     });

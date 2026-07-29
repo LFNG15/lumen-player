@@ -1,6 +1,7 @@
 #include "design/stylesheet.h"
 #include "homepage.h"
 #include "lang.h"
+#include "models/trackcontextmenu.h"
 #include <QLabel>
 #include <QPushButton>
 #include <QGridLayout>
@@ -8,6 +9,7 @@
 #include <QLinearGradient>
 #include <QDateTime>
 #include <QFrame>
+#include <QCursor>
 #include "hoverplayfilter.h"
 #include "coverwidget.h"
 
@@ -16,6 +18,17 @@ HomePage::HomePage(TrackModel *model, QWidget *parent)
 {
     auto *outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_ctx = new TrackContextMenu(m_model, this);
+    connect(m_ctx, &TrackContextMenu::enqueueRequested, this, &HomePage::enqueueRequested);
+    connect(m_ctx, &TrackContextMenu::playRequested, this, &HomePage::playRequested);
+    connect(m_ctx, &TrackContextMenu::editRequested, this, &HomePage::editTrackRequested);
+    connect(m_ctx, &TrackContextMenu::deleteRequested, this, &HomePage::deleteRequested);
+    connect(m_ctx, &TrackContextMenu::likeToggled, this, &HomePage::likeToggled);
+    connect(m_ctx, &TrackContextMenu::membershipChanged, this, [this]() {
+        // Playlist membership changed — soft refresh of current home view.
+        // Parent MainWindow also refreshes on tracksChanged for most edits.
+    });
 
     m_scroll = new QScrollArea(this);
     m_scroll->setWidgetResizable(true);
@@ -295,18 +308,20 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
         layout->addWidget(tag);
     }
 
-    // Add to queue button
-    auto *queueBtn = new QPushButton(QStringLiteral("\uE710"));
-    queueBtn->setFixedSize(28, 28);
-    queueBtn->setCursor(Qt::PointingHandCursor);
-    queueBtn->setToolTip(Lang::tr("Adicionar \u00E0 fila"));
-    lumen::design::StyleSheet::apply(queueBtn, QString(
+    // "+" → choose queue or playlist (not enqueue-only).
+    auto *addBtn = new QPushButton(QStringLiteral("\uE710"));
+    addBtn->setFixedSize(28, 28);
+    addBtn->setCursor(Qt::PointingHandCursor);
+    addBtn->setToolTip(Lang::tr("Adicionar à fila ou playlist"));
+    lumen::design::StyleSheet::apply(addBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; font-size: 13px; font-family: \"Segoe MDL2 Assets\"; }"
         "QPushButton:hover { color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::accent().name()));
-    Track qt = track;
-    connect(queueBtn, &QPushButton::clicked, [this, qt]() { emit enqueueRequested(qt); });
-    layout->addWidget(queueBtn);
+    const int addId = track.id;
+    connect(addBtn, &QPushButton::clicked, this, [this, addId]() {
+        m_ctx->popupAddMenu({addId}, QCursor::pos());
+    });
+    layout->addWidget(addBtn);
 
     // Like button
     auto *likeBtn = new QPushButton(track.liked ? "\uE00B" : "\uE006");
