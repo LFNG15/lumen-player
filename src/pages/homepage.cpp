@@ -10,6 +10,7 @@
 #include <QDateTime>
 #include <QFrame>
 #include <QCursor>
+#include <QResizeEvent>
 #include "hoverplayfilter.h"
 #include "coverwidget.h"
 
@@ -45,7 +46,27 @@ HomePage::HomePage(TrackModel *model, QWidget *parent)
     outerLayout->addWidget(m_scroll);
 }
 
+int HomePage::chipColumnsForWidth(int w) const
+{
+    return qBound(1, (qMax(240, w - 64) + 8) / 208, 4);
+}
+
+void HomePage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    const int cols = chipColumnsForWidth(width());
+    if (cols != m_lastChipCols && m_lastChipCols >= 0) {
+        m_lastChipCols = cols;
+        refresh(m_lastCurrentId, m_lastPlaying);
+    } else if (m_lastChipCols < 0) {
+        m_lastChipCols = cols;
+    }
+}
+
 void HomePage::refresh(int currentTrackId, bool isPlaying) {
+    m_lastCurrentId = currentTrackId;
+    m_lastPlaying = isPlaying;
+    m_lastChipCols = chipColumnsForWidth(width());
     // Clear existing
     QLayoutItem *item;
     while ((item = m_contentLayout->takeAt(0)) != nullptr) {
@@ -110,8 +131,7 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     if (!folders.isEmpty()) {
         auto *grid = new QGridLayout();
         grid->setSpacing(8);
-        // Chips reflow: ~ min chip width 200 + gap.
-        const int chipCols = qBound(1, (qMax(240, width() - 64) + 8) / 208, 4);
+        const int chipCols = m_lastChipCols > 0 ? m_lastChipCols : chipColumnsForWidth(width());
         int col = 0, row = 0;
         for (auto &f : folders) {
             int count = m_model->tracksInFolder(f.name).size();
@@ -249,10 +269,10 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     row->setObjectName("trackRow");
     row->setFixedHeight(52);
     row->setCursor(Qt::PointingHandCursor);
-    // Active: solid accent + onAccent text (same as nav / playlist rows).
+    // Active: translucent accent wash + light text.
     lumen::design::StyleSheet::apply(row, QString(
         "QWidget#trackRow { background: %1; border-radius: 8px; }"
-    ).arg(active ? Theme::accent().name() : QStringLiteral("transparent")));
+    ).arg(active ? Theme::accentRgba(0.32) : QStringLiteral("transparent")));
 
     auto *layout = new QHBoxLayout(row);
     layout->setContentsMargins(12, 4, 12, 4);

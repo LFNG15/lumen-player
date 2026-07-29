@@ -106,6 +106,8 @@ private:
 
     QLabel *m_toast = nullptr;
     QTimer *m_toastTimer = nullptr;
+    QTimer *m_resizeLayoutTimer = nullptr;
+    int m_lastLayoutWidth = 0;
 };
 
 #endif // MAINWINDOW_H

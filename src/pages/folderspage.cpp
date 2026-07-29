@@ -14,6 +14,7 @@
 #include <QColorDialog>
 #include <QFileDialog>
 #include <QMenu>
+#include <QResizeEvent>
 
 FoldersPage::FoldersPage(TrackModel *model, QWidget *parent)
     : QWidget(parent), m_model(model)
@@ -36,7 +37,26 @@ FoldersPage::FoldersPage(TrackModel *model, QWidget *parent)
     outerLayout->addWidget(scroll);
 }
 
+int FoldersPage::columnCountForWidth(int w) const
+{
+    const int viewportW = qMax(200, w - 64);
+    return qBound(1, (viewportW + 16) / (180 + 16), 6);
+}
+
+void FoldersPage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    const int cols = columnCountForWidth(width());
+    if (cols != m_lastCols && m_lastCols >= 0) {
+        m_lastCols = cols;
+        refresh();
+    } else if (m_lastCols < 0) {
+        m_lastCols = cols;
+    }
+}
+
 void FoldersPage::refresh() {
+    m_lastCols = columnCountForWidth(width());
     QLayoutItem *item;
     while ((item = m_contentLayout->takeAt(0)) != nullptr) {
         if (item->widget()) item->widget()->deleteLater();
@@ -83,9 +103,7 @@ void FoldersPage::refresh() {
 
     auto *grid = new QGridLayout();
     grid->setSpacing(16);
-    // Columns adapt to available content width (~ card 180 + gap 16).
-    const int viewportW = qMax(200, width() - 64);
-    const int cols = qBound(1, (viewportW + 16) / (180 + 16), 6);
+    const int cols = m_lastCols > 0 ? m_lastCols : columnCountForWidth(width());
     int col = 0, row = 0;
 
     // Standalone tracks card
@@ -129,10 +147,14 @@ void FoldersPage::refresh() {
         lumen::design::StyleSheet::apply(countLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
         cardLayout->addWidget(countLabel);
 
-        // Clickable overlay on top so clicks anywhere on the card navigate.
+        // Clickable overlay — no hover wash on playlist cards.
         auto *overlay = new QPushButton(card);
+        overlay->setFlat(true);
         overlay->setGeometry(0, 0, 180, 210);
-        lumen::design::StyleSheet::apply(overlay, "background: transparent; border: none;");
+        lumen::design::StyleSheet::apply(overlay, QStringLiteral(
+            "QPushButton { background: transparent; border: none; }"
+            "QPushButton:hover { background: transparent; border: none; }"
+            "QPushButton:pressed { background: transparent; border: none; }"));
         overlay->setCursor(Qt::PointingHandCursor);
         overlay->raise();
         connect(overlay, &QPushButton::clicked, [this]() { emit folderSelected(""); });
@@ -236,10 +258,14 @@ void FoldersPage::refresh() {
             menu->deleteLater();
         });
 
-        // Clickable overlay on top so clicks anywhere on the card navigate.
+        // Clickable overlay — no hover wash on playlist cards.
         auto *overlay = new QPushButton(card);
+        overlay->setFlat(true);
         overlay->setGeometry(0, 0, 180, 210);
-        lumen::design::StyleSheet::apply(overlay, "background: transparent; border: none;");
+        lumen::design::StyleSheet::apply(overlay, QStringLiteral(
+            "QPushButton { background: transparent; border: none; }"
+            "QPushButton:hover { background: transparent; border: none; }"
+            "QPushButton:pressed { background: transparent; border: none; }"));
         overlay->setCursor(Qt::PointingHandCursor);
         overlay->raise();
         connect(overlay, &QPushButton::clicked, [this, fname]() { emit folderSelected(fname); });

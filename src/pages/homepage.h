@@ -22,16 +22,23 @@ signals:
     void deleteRequested(int id);
     void navigateTo(const QString &page, const QString &data = "");
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
     QWidget *createTrackRow(const Track &track, int index, int currentId, bool isPlaying);
     QWidget *createFolderChip(const Folder &folder, int trackCount);
     QWidget *createChipCover(const Folder &folder);
     QWidget *createRecentCard(const Folder &folder);
+    int chipColumnsForWidth(int w) const;
 
     TrackModel *m_model;
     TrackContextMenu *m_ctx = nullptr;
     QVBoxLayout *m_contentLayout;
     QScrollArea *m_scroll;
+    int m_lastChipCols = -1;
+    int m_lastCurrentId = 0;
+    bool m_lastPlaying = false;
 };
 
 #endif // HOMEPAGE_H

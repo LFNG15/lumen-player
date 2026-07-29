@@ -85,13 +85,15 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     const bool current = index.data(TrackListModel::IsCurrentRole).toBool();
     const bool playing = index.data(TrackListModel::IsPlayingRole).toBool();
     const bool liked = index.data(TrackListModel::LikedRole).toBool();
-    // Same chrome as sidebar nav: solid accent + onAccent (white) text.
+    // Translucent accent wash + light (onAccent) text — not solid fill.
     const bool accentRow = current || hover;
 
-    // Background
     p->setPen(Qt::NoPen);
     if (accentRow) {
-        p->setBrush(hover && !current ? c.accent.lighter(105) : c.accent);
+        QColor wash = c.accent;
+        // ~opaque-translucent orange; stronger when current/playing.
+        wash.setAlpha(current ? 90 : 55); // 90/255≈0.35, 55/255≈0.22
+        p->setBrush(wash);
         p->drawRoundedRect(option.rect.adjusted(2, 1, -2, -1), 8, 8);
     } else if (selected) {
         p->setBrush(c.cardHover);

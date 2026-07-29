@@ -1097,14 +1097,10 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
     if (m_toast && m_toast->isVisible()) repositionToast();
 
-    // Keep content readable on narrow windows: clamp queue, prefer collapsed
-    // sidebar under ~900px so the track list does not get crushed.
+    // Keep content readable on narrow windows: clamp queue so the track list
+    // is not crushed. Reflow page grids live (debounced).
     if (!m_splitter) return;
     const int w = width();
-    if (w < 900 && !m_sidebarCollapsed) {
-        // Soft hint only once per shrink session would be better UX; for now
-        // leave expanded — but clamp queue so content keeps ≥ 320px.
-    }
     if (m_queuePage && m_queuePage->isVisible()) {
         const int queueMax = qBound(200, w / 3, 480);
         const int queueMin = w < 900 ? 180 : 200;
@@ -1126,6 +1122,26 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
     // Content pane floor
     if (QWidget *content = m_stack ? m_stack->parentWidget() : nullptr)
         content->setMinimumWidth(w < 800 ? 280 : 340);
+
+    // Live layout reflow: grids rebuild only when width moves enough.
+    if (!m_resizeLayoutTimer) {
+        m_resizeLayoutTimer = new QTimer(this);
+        m_resizeLayoutTimer->setSingleShot(true);
+        connect(m_resizeLayoutTimer, &QTimer::timeout, this, [this]() {
+            const int wNow = width();
+            if (m_lastLayoutWidth > 0 && qAbs(wNow - m_lastLayoutWidth) < 24)
+                return;
+            m_lastLayoutWidth = wNow;
+            refreshCurrentPage();
+            // Sidebar grid view sizes cells from width.
+            if (!m_sidebarCollapsed
+                && QSettings().value(QStringLiteral("sidebarView"), QStringLiteral("list")).toString()
+                       == QLatin1String("grid")) {
+                refreshSidebarFolders();
+            }
+        });
+    }
+    m_resizeLayoutTimer->start(40);
 }
 
 void MainWindow::navigateTo(const QString &page, const QString &data) {

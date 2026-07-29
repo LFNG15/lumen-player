@@ -200,16 +200,17 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
     row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     row->setMinimumWidth(0);
 
+    // Translucent accent wash; labels stay light (onAccent / white) on active+hover.
     if (active) {
         lumen::design::StyleSheet::apply(row, QString(
             "QPushButton { background-color: %1; border: none; border-radius: 8px; text-align: left; }"
             "QPushButton:hover { background-color: %2; }"
-        ).arg(Theme::accent().name(), Theme::accentHover().name()));
+        ).arg(Theme::accentRgba(0.32), Theme::accentRgba(0.40)));
     } else {
         lumen::design::StyleSheet::apply(row, QString(
             "QPushButton { background: transparent; border: none; border-radius: 8px; text-align: left; }"
             "QPushButton:hover { background-color: %1; }"
-        ).arg(Theme::accent().name()));
+        ).arg(Theme::accentRgba(0.22)));
     }
 
     auto *layout = new QHBoxLayout(row);
