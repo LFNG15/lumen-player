@@ -103,7 +103,7 @@ FolderDetailPage::FolderDetailPage(TrackModel *model, QWidget *parent)
     m_view->setDropIndicatorShown(true);
     m_view->setDragDropMode(QAbstractItemView::NoDragDrop);
     m_view->setFrameShape(QFrame::NoFrame);
-    m_view->setSpacing(2);
+    m_view->setSpacing(8);
     lumen::design::StyleSheet::apply(m_view, QStringLiteral(
         "QListView { background: transparent; border: none; outline: none; }"));
 

@@ -44,7 +44,7 @@ LikedPage::LikedPage(TrackModel *model, QWidget *parent)
     m_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_view->setMouseTracking(true);
     m_view->setFrameShape(QFrame::NoFrame);
-    m_view->setSpacing(2);
+    m_view->setSpacing(8);
     m_view->setContextMenuPolicy(Qt::CustomContextMenu);
     lumen::design::StyleSheet::apply(m_view, QStringLiteral(
         "QListView { background: transparent; border: none; outline: none; }"));
