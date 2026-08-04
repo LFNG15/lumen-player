@@ -11,6 +11,8 @@
 #include <QFrame>
 #include <QCursor>
 #include <QResizeEvent>
+#include <QFontMetrics>
+#include <QPixmap>
 #include "hoverplayfilter.h"
 #include "coverwidget.h"
 
@@ -132,10 +134,17 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         auto *grid = new QGridLayout();
         grid->setSpacing(8);
         const int chipCols = m_lastChipCols > 0 ? m_lastChipCols : chipColumnsForWidth(width());
+        // Column stretch forces every column to share the grid's real width
+        // equally, so the layout can never end up wider than the window no
+        // matter how long an individual playlist name is (the chip itself
+        // elides to fit — see createFolderChip).
+        for (int c = 0; c < chipCols; ++c)
+            grid->setColumnStretch(c, 1);
+        const int chipW = qMax(120, (qMax(240, width() - 64) - (chipCols - 1) * 8) / chipCols);
         int col = 0, row = 0;
         for (auto &f : folders) {
             int count = m_model->tracksInFolder(f.name).size();
-            auto *chip = createFolderChip(f, count);
+            auto *chip = createFolderChip(f, count, chipW);
             grid->addWidget(chip, row, col);
             col++;
             if (col >= chipCols) { col = 0; row++; }
@@ -145,6 +154,7 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         if (!liked.isEmpty()) {
             auto *likedChip = new QPushButton();
             likedChip->setFixedHeight(64);
+            likedChip->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
             likedChip->setCursor(Qt::PointingHandCursor);
             lumen::design::StyleSheet::apply(likedChip, QString(
                 "QPushButton { background: %1; border: none; border-radius: 8px; }"
@@ -157,13 +167,32 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
 
             auto *heartCover = new QLabel("");
             heartCover->setFixedSize(48, 48);
-            heartCover->setAlignment(Qt::AlignCenter);
-            heartCover->setFont(Theme::iconFont(18));
             heartCover->setAttribute(Qt::WA_TransparentForMouseEvents);
             lumen::design::StyleSheet::apply(heartCover, QString(
-                "background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2);"
-                "color: %3; border-radius: 6px;")
-                .arg(Theme::accent().name(), Theme::accentDim().darker(160).name(), Theme::text().name()));
+                "background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
+                .arg(Theme::accent().name(), Theme::accentDim().darker(160).name()));
+
+            // Paint the glyph centered on its actual ink bounds instead of via
+            // QLabel's Qt::AlignCenter, which centers Segoe MDL2 Assets glyphs by
+            // their (uneven) advance box and leaves them drifting toward the
+            // top-left — visible at this icon size.
+            {
+                const QString glyph = heartCover->text();
+                const QFont font = Theme::iconFont(18);
+                const QFontMetrics fm(font);
+                const QRect ink = fm.tightBoundingRect(glyph);
+
+                QPixmap pix(heartCover->size());
+                pix.fill(Qt::transparent);
+                QPainter p(&pix);
+                p.setRenderHint(QPainter::Antialiasing);
+                p.setFont(font);
+                p.setPen(Theme::text());
+                const int x = (pix.width()  - ink.width())  / 2 - ink.left();
+                const int y = (pix.height() - ink.height()) / 2 - ink.top();
+                p.drawText(x, y, glyph);
+                heartCover->setPixmap(pix);
+            }
             likedLayout->addWidget(heartCover, 0, Qt::AlignVCenter);
 
             auto *likedInfo = new QVBoxLayout();
@@ -438,9 +467,15 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     return row;
 }
 
-QWidget *HomePage::createFolderChip(const Folder &folder, int trackCount) {
+QWidget *HomePage::createFolderChip(const Folder &folder, int trackCount, int chipWidth) {
     auto *chip = new QPushButton();
     chip->setFixedHeight(64);
+    // Grow to fill its (stretched) grid column instead of just its natural
+    // content width — paired with the column stretch in refresh(), this is
+    // what actually keeps the grid's real width in sync with the column
+    // count chipColumnsForWidth() chose, instead of drifting wider than the
+    // window as soon as a playlist name is long.
+    chip->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     chip->setCursor(Qt::PointingHandCursor);
     lumen::design::StyleSheet::apply(chip, QString(
         "QPushButton { background: %1; border: none; border-radius: 8px; }"
@@ -457,11 +492,16 @@ QWidget *HomePage::createFolderChip(const Folder &folder, int trackCount) {
 
     auto *infoLayout = new QVBoxLayout();
     infoLayout->setSpacing(1);
-    auto *nameLabel = new QLabel(folder.name);
+    auto *nameLabel = new QLabel();
     nameLabel->setFont(Theme::bodyFont(13));
+    nameLabel->setMinimumWidth(0);
+    nameLabel->setToolTip(folder.name);
+    const int textAvail = qMax(40, chipWidth - 20 /*chip margins*/ - 48 /*cover*/ - 10 /*spacing*/);
+    nameLabel->setText(QFontMetrics(nameLabel->font()).elidedText(folder.name, Qt::ElideRight, textAvail));
     lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent; font-weight: bold;").arg(Theme::text().name()));
     auto *countLabel = new QLabel(QString(Lang::tr("%1 faixa%2")).arg(trackCount).arg(trackCount != 1 ? "s" : ""));
     countLabel->setFont(Theme::bodyFont(10));
+    countLabel->setMinimumWidth(0);
     lumen::design::StyleSheet::apply(countLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     infoLayout->addStretch();
     infoLayout->addWidget(nameLabel);

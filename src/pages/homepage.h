@@ -28,7 +28,7 @@ protected:
 private:
     QVBoxLayout *createTrackList(const QList<Track> &tracks, int currentId, bool isPlaying);
     QWidget *createTrackRow(const Track &track, int index, int currentId, bool isPlaying);
-    QWidget *createFolderChip(const Folder &folder, int trackCount);
+    QWidget *createFolderChip(const Folder &folder, int trackCount, int chipWidth);
     QWidget *createChipCover(const Folder &folder);
     QWidget *createRecentCard(const Folder &folder);
     int chipColumnsForWidth(int w) const;
