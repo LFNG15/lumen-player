@@ -2,6 +2,7 @@
 #include "migrator.h"
 #include "mediatools.h"
 #include "position_gap.h"
+#include "owner_decision.h"
 
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -773,8 +774,13 @@ AddToPlaylistResult Database::addTrackToPlaylist(int trackId, int playlistId)
     r.trackTitle = title;
     r.destName = dest.name;
 
+    // Decide what this association means (first owner / crosses owner / same owner) —
+    // pure logic, no I/O — then act on the decision below.
+    const lumen::playlist::OwnerDecision decision =
+        lumen::playlist::decideOwner(ownerId, playlistId);
+
     // First association: set owner (file is not moved).
-    if (ownerId == 0) {
+    if (decision.firstOwner) {
         QSqlQuery q;
         q.prepare(QStringLiteral(
             "UPDATE tracks SET owner_playlist_id = ? WHERE id = ? "
@@ -783,7 +789,6 @@ AddToPlaylistResult Database::addTrackToPlaylist(int trackId, int playlistId)
         q.addBindValue(trackId);
         q.exec();
         r.firstOwner = true;
-        ownerId = playlistId;
     }
 
     const qint64 pos = nextPositionInPlaylist(playlistId);
@@ -802,11 +807,11 @@ AddToPlaylistResult Database::addTrackToPlaylist(int trackId, int playlistId)
     }
 
     r.status = AddToPlaylistResult::Added;
-    if (ownerId > 0 && ownerId != playlistId) {
+    if (decision.crossesOwner) {
         r.crossesOwner = true;
-        const Folder owner = playlistById(ownerId);
+        const Folder owner = playlistById(decision.ownerPlaylistId);
         r.ownerName = owner.name;
-        r.ownerDirPath = playlistDiskPath(ownerId);
+        r.ownerDirPath = playlistDiskPath(decision.ownerPlaylistId);
     }
     return r;
 }

@@ -104,6 +104,7 @@ set(PROJECT_HEADERS
     src/platform/trayicon.h
     src/tools/ytdlp_bootstrap.h
     src/database/position_gap.h
+    src/database/owner_decision.h
     src/widgets/vinylwidget.h
     src/widgets/clickableslider.h
     src/widgets/theme.h
@@ -322,6 +323,9 @@ if(LUMEN_BUILD_TESTS)
 
     lumen_add_test(test_position_gap
         tests/test_position_gap.cpp)
+
+    lumen_add_test(test_owner_decision
+        tests/test_owner_decision.cpp)
 
     lumen_add_test(test_trackrow_hittest
         tests/test_trackrow_hittest.cpp
