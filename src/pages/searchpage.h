@@ -7,6 +7,7 @@
 class QListView;
 class QLabel;
 class QTimer;
+class QResizeEvent;
 class TrackListModel;
 class TrackFilterProxy;
 class TrackRowDelegate;
@@ -27,10 +28,14 @@ signals:
     void enqueueRequested(const Track &track);
     void navigateTo(const QString &page, const QString &data = "");
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
     void applyQuery();
     void showContext(const QPoint &globalPos);
     QList<int> selectedIds() const;
+    void applyResponsiveLayout();
 
     TrackModel *m_model = nullptr;
     QString m_query;

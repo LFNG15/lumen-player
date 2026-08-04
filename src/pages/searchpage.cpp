@@ -15,6 +15,8 @@
 #include <QListView>
 #include <QTimer>
 #include <QCursor>
+#include <QFontMetrics>
+#include <QResizeEvent>
 
 SearchPage::SearchPage(TrackModel *model, QWidget *parent)
     : QWidget(parent)
@@ -26,6 +28,8 @@ SearchPage::SearchPage(TrackModel *model, QWidget *parent)
 
     m_title = new QLabel(this);
     m_title->setFont(Theme::titleFont(24));
+    m_title->setWordWrap(true);
+    m_title->setMinimumWidth(0);
     lumen::design::StyleSheet::apply(m_title, QString(
         "color: %1; background: transparent;").arg(Theme::text().name()));
     root->addWidget(m_title);
@@ -193,7 +197,9 @@ void SearchPage::applyQuery()
         lay->addWidget(lbl);
 
         for (const auto &f : folderHits) {
-            auto *btn = new QPushButton(f.name, m_playlistHits);
+            auto *btn = new QPushButton(m_playlistHits);
+            btn->setObjectName(QStringLiteral("searchPlaylistHit"));
+            btn->setProperty("fullName", f.name);
             btn->setCursor(Qt::PointingHandCursor);
             btn->setFont(Theme::bodyFont(13));
             lumen::design::StyleSheet::apply(btn, QString(
@@ -222,5 +228,26 @@ void SearchPage::applyQuery()
     } else {
         m_empty->hide();
         m_view->setVisible(trackHits > 0);
+    }
+
+    applyResponsiveLayout();
+}
+
+void SearchPage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    applyResponsiveLayout();
+}
+
+void SearchPage::applyResponsiveLayout()
+{
+    // Elide playlist-hit buttons against the page's current width instead of
+    // letting a long playlist name overflow it (button text is set here, not
+    // in applyQuery(), so this alone stays cheap on every resize tick).
+    const int avail = qMax(60, width() - 64 /* page margins */ - 28 /* button padding */);
+    const auto hits = m_playlistHits->findChildren<QPushButton *>(QStringLiteral("searchPlaylistHit"));
+    for (auto *btn : hits) {
+        const QString full = btn->property("fullName").toString();
+        btn->setText(QFontMetrics(btn->font()).elidedText(full, Qt::ElideRight, avail));
     }
 }

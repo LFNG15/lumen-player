@@ -11,6 +11,8 @@
 #include <QFileInfo>
 #include <QScrollArea>
 #include <QFrame>
+#include <QFontMetrics>
+#include <QResizeEvent>
 #include <QUuid>
 #include <QRegularExpression>
 #include <QCoreApplication>
@@ -118,6 +120,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
 
     m_downloadFolderLabel = new QLabel();
     m_downloadFolderLabel->setFont(Theme::bodyFont(11));
+    m_downloadFolderLabel->setMinimumWidth(0);
     lumen::design::StyleSheet::apply(m_downloadFolderLabel, QString("color: %1; background: transparent;")
         .arg(Theme::textMuted().name()));
     m_downloadFolderLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -269,7 +272,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     lumen::design::StyleSheet::apply(folderLabel, QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;").arg(Theme::textSoft().name()));
     folderLayout->addWidget(folderLabel);
 
-    auto *folderRow = new QHBoxLayout();
+    m_folderRow = new QHBoxLayout();
+    auto *folderRow = m_folderRow;
     folderRow->setSpacing(8);
 
     m_folderCombo = new QComboBox();
@@ -561,9 +565,30 @@ void AddMusicPage::chooseDownloadFolder() {
 }
 
 void AddMusicPage::updateDownloadFolderLabel() {
-    if (m_downloadFolderLabel)
-        m_downloadFolderLabel->setText(
-            Lang::tr("Salvar em: ") + QDir::toNativeSeparators(downloadDir()));
+    if (!m_downloadFolderLabel) return;
+    m_downloadFolderFullText = Lang::tr("Salvar em: ") + QDir::toNativeSeparators(downloadDir());
+    applyResponsiveLayout();
+}
+
+void AddMusicPage::resizeEvent(QResizeEvent *event) {
+    QWidget::resizeEvent(event);
+    applyResponsiveLayout();
+}
+
+void AddMusicPage::applyResponsiveLayout() {
+    // Below ~480px the combo + new-playlist field no longer fit side by side
+    // (each has its own minimum width); stack them instead of letting the
+    // row force the scroll area wider than the window.
+    if (m_folderRow)
+        m_folderRow->setDirection(width() < 480 ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+
+    // Elide the (potentially long, OS-native) download path against the
+    // page's current width instead of letting it push "Alterar" out of the row.
+    if (m_downloadFolderLabel && !m_downloadFolderFullText.isEmpty()) {
+        const int avail = qMax(60, width() - 64 /* page margins */ - 90 /* "Alterar" + spacing */);
+        m_downloadFolderLabel->setText(QFontMetrics(m_downloadFolderLabel->font())
+            .elidedText(m_downloadFolderFullText, Qt::ElideMiddle, avail));
+    }
 }
 
 void AddMusicPage::startDownload() {

@@ -126,8 +126,9 @@ MainWindow::MainWindow(QWidget *parent)
             settings.setValue("sidebarWidth", m_splitter->sizes().value(0));
         if (m_queuePage->isVisible())
             settings.setValue("queueWidth", m_splitter->sizes().value(2));
-        // The grid view sizes its cells from the sidebar width.
-        if (!m_sidebarCollapsed && settings.value("sidebarView", "list").toString() == "grid")
+        // Every sidebar view mode sizes something off the sidebar width (grid
+        // cell count, list/compact name eliding) — keep it live while dragging.
+        if (!m_sidebarCollapsed)
             refreshSidebarFolders();
     });
 
@@ -693,6 +694,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         .arg(m_model->tracks().size())
         .arg(m_model->tracks().size() != 1 ? "s" : ""));
     m_trackCountLabel->setFont(Theme::bodyFont(10));
+    m_trackCountLabel->setMinimumWidth(0); // never force the lang/theme buttons out of view
     lumen::design::StyleSheet::apply(m_trackCountLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     footerLayout->addWidget(m_trackCountLabel, 1);
 
@@ -897,7 +899,14 @@ void MainWindow::refreshSidebarFolders() {
                 // Labels don't inherit QPushButton color — set explicitly.
                 const QString nameCol = active ? Theme::text().name() : Theme::textSoft().name();
                 const QString countCol = active ? Theme::textSoft().name() : Theme::textMuted().name();
-                auto *nameLabel = new QLabel(f.name);
+                // Elide against the sidebar's live (draggable) width — otherwise a
+                // long playlist name refuses to shrink and overlaps countLabel.
+                const int coverW = compact ? 0 : 36;   // cover + its spacing
+                const int nameAvail = qMax(40, m_sidebar->width() - 22 /*margins*/ - coverW - 28 /*count*/ - 8);
+                auto *nameLabel = new QLabel(QFontMetrics(Theme::bodyFont(12))
+                    .elidedText(f.name, Qt::ElideRight, nameAvail));
+                nameLabel->setToolTip(f.name);
+                nameLabel->setMinimumWidth(0);
                 nameLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
                 lumen::design::StyleSheet::apply(nameLabel, QString(
                     "color: %1; background: transparent;").arg(nameCol));
