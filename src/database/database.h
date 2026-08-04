@@ -83,6 +83,9 @@ public:
         int    repeatMode = 0;   // 0=Off, 1=All, 2=One
         QList<int> contextIds;
         QList<int> userQueueIds;
+        int     contextIndex = -1;  // position within contextIds when a manual-queue
+                                     // track was playing (see PlaybackEngine::m_contextIndex)
+        QString contextName;
     };
     PlaybackState loadState();
     void          saveState(const PlaybackState &s);
