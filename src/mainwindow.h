@@ -58,6 +58,8 @@ private:
     void toggleSidebarSearch();
     void reapplyChromeStyles();
     void setupPlatformIntegration();  // SMTC / media keys / tray (after show)
+    void showQueuePanel();
+    void hideQueuePanel();
     void pushNowPlayingMetadata();
     void onNowPlayingCommand(lumen::platform::TransportCommand cmd, qint64 argMs);
 

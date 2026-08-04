@@ -3,6 +3,7 @@
 
 #include <QWidget>
 #include <QVBoxLayout>
+#include <QPoint>
 #include "trackmodel.h"
 
 class PlayerBar;
@@ -20,6 +21,8 @@ signals:
     void playContext(const Track &track);        // play an item, keeping the current context
     void playFromQueue(int index);               // play a manually queued item by index
     void removeFromQueueRequested(int index);    // drop a manually queued item
+    void clearQueueRequested();                  // drop all manually queued items
+    void reorderQueueRequested(int from, int to); // drag-reorder within the manual queue
     void navigateBack();
 
 protected:
@@ -42,6 +45,7 @@ private:
     QScrollArea *m_scroll = nullptr;
     int m_lastCurrentId = 0;
     bool m_lastPlaying = false;
+    QPoint m_dragStartPos;
 };
 
 #endif // QUEUEPAGE_H

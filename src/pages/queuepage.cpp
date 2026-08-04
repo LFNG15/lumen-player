@@ -13,6 +13,16 @@
 #include <QShowEvent>
 #include <QFontMetrics>
 #include <QSizePolicy>
+#include <QApplication>
+#include <QMouseEvent>
+#include <QDrag>
+#include <QMimeData>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+
+// Custom MIME type carrying the dragged row's manual-queue index.
+static const QString kQueueMime = QStringLiteral("application/x-lumen-queue-index");
 
 // Spotify-style queue side panel: a resizable column on the right of the window,
 // toggled by the player bar's queue button (not a stacked page).
@@ -108,6 +118,22 @@ void QueuePage::applyResponsiveLayout()
     }
     if (m_contentLayout)
         m_contentLayout->setContentsMargins(hPad, 4, hPad, 12);
+
+    // Re-elide every row's title/artist against the panel's *current* width —
+    // otherwise text stays truncated to whatever width existed when the row
+    // was built and only catches up on the next refresh() (reload).
+    if (m_scroll && m_scroll->widget()) {
+        const int avail = qMax(40, w - coverSize() - 80);
+        QWidget *content = m_scroll->widget();
+        for (auto *l : content->findChildren<QLabel *>(QStringLiteral("queueTitle"))) {
+            QFont f = l->font();
+            l->setText(QFontMetrics(f).elidedText(l->property("srcText").toString(), Qt::ElideRight, avail));
+        }
+        for (auto *l : content->findChildren<QLabel *>(QStringLiteral("queueArtist"))) {
+            QFont f = l->font();
+            l->setText(QFontMetrics(f).elidedText(l->property("srcText").toString(), Qt::ElideRight, avail));
+        }
+    }
 }
 
 int QueuePage::coverSize() const
@@ -169,13 +195,41 @@ void QueuePage::refresh(int currentTrackId, bool isPlaying)
     }
 
     if (!userQueue.isEmpty()) {
-        addSectionLabel(Lang::tr("PRÓXIMAS NA FILA"));
+        auto *headerRow = new QWidget();
+        auto *headerLay = new QHBoxLayout(headerRow);
+        headerLay->setContentsMargins(0, 0, 0, 0);
+        headerLay->setSpacing(4);
+        lumen::design::StyleSheet::apply(headerRow, QStringLiteral("background: transparent;"));
+
+        auto *label = new QLabel(Lang::tr("PRÓXIMAS NA FILA"));
+        label->setFont(Theme::bodyFont(10));
+        lumen::design::StyleSheet::apply(label, QString(
+            "color: %1; background: transparent; font-weight: bold; "
+            "letter-spacing: 1px; padding: 8px 6px 2px;"
+        ).arg(Theme::textMuted().name()));
+        headerLay->addWidget(label, 1);
+
+        auto *clearBtn = new QPushButton(Lang::tr("Limpar"));
+        clearBtn->setFont(Theme::bodyFont(10));
+        clearBtn->setCursor(Qt::PointingHandCursor);
+        clearBtn->setFlat(true);
+        clearBtn->setToolTip(Lang::tr("Remover todas as músicas avulsas da fila"));
+        lumen::design::StyleSheet::apply(clearBtn, QString(
+            "QPushButton { background: transparent; color: %1; border: none; padding: 4px 6px; }"
+            "QPushButton:hover { color: %2; }"
+        ).arg(Theme::textMuted().name(), Theme::danger().name()));
+        connect(clearBtn, &QPushButton::clicked, this, &QueuePage::clearQueueRequested);
+        headerLay->addWidget(clearBtn);
+
+        m_contentLayout->addWidget(headerRow);
         for (int i = 0; i < userQueue.size(); ++i)
             m_contentLayout->addWidget(createRow(userQueue[i], QString::number(i + 1), false, i));
     }
 
     if (!upcoming.isEmpty()) {
-        addSectionLabel(Lang::tr("A SEGUIR"));
+        const QString ctxName = m_player->contextName();
+        addSectionLabel(ctxName.isEmpty() ? Lang::tr("A SEGUIR")
+                                          : QString(Lang::tr("A SEGUIR — %1")).arg(ctxName));
         for (int i = 0; i < upcoming.size(); ++i)
             m_contentLayout->addWidget(createRow(upcoming[i], QString(),
                                                  upcoming[i].id == currentTrackId, -1));
@@ -207,6 +261,14 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
     row->setFixedHeight(rh);
     row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     row->setMinimumWidth(0);
+
+    // Manual-queue rows ("PRÓXIMAS NA FILA") support drag-to-reorder, Spotify-
+    // style; the index rides on the widget so the shared eventFilter can find
+    // it for both the drag source and the drop target.
+    if (queueIndex >= 0) {
+        row->setProperty("queueIndex", queueIndex);
+        row->setAcceptDrops(true);
+    }
 
     // Translucent accent wash; labels stay light on active+hover.
     if (active) {
@@ -250,23 +312,26 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
     infoCol->setSpacing(2);
     infoCol->setContentsMargins(0, 0, 0, 0);
 
-    auto *titleLabel = new QLabel(track.title, row);
+    // Full text lives in the "srcText" property; the visible text is kept
+    // elided to the panel's current width by applyResponsiveLayout(), which
+    // re-runs on every resize (not just on the next refresh()/reload).
+    auto *titleLabel = new QLabel(row);
+    titleLabel->setObjectName(QStringLiteral("queueTitle"));
+    titleLabel->setProperty("srcText", track.title);
     titleLabel->setFont(Theme::bodyFont(11));
     titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     titleLabel->setMinimumWidth(0);
     titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    titleLabel->setText(QFontMetrics(titleLabel->font()).elidedText(
-        track.title, Qt::ElideRight, qMax(40, width() - cov - 80)));
     lumen::design::StyleSheet::apply(titleLabel, QString(
         "color: %1; background: transparent; font-weight: 600;").arg(titleCol));
 
-    auto *artistLabel = new QLabel(track.artist, row);
+    auto *artistLabel = new QLabel(row);
+    artistLabel->setObjectName(QStringLiteral("queueArtist"));
+    artistLabel->setProperty("srcText", track.artist);
     artistLabel->setFont(Theme::bodyFont(10));
     artistLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     artistLabel->setMinimumWidth(0);
     artistLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    artistLabel->setText(QFontMetrics(artistLabel->font()).elidedText(
-        track.artist, Qt::ElideRight, qMax(40, width() - cov - 80)));
     lumen::design::StyleSheet::apply(artistLabel, QString(
         "color: %1; background: transparent;").arg(artistCol));
 
@@ -314,20 +379,67 @@ QWidget *QueuePage::createRow(const Track &track, const QString &position, bool 
         row->setProperty("titleIdle", idleT);
         row->setProperty("artistIdle", idleA);
         row->setProperty("onAccent", onA);
-        // Labels found via findChild in eventFilter (object names).
-        titleLabel->setObjectName(QStringLiteral("queueTitle"));
-        artistLabel->setObjectName(QStringLiteral("queueArtist"));
     }
 
     return shell;
 }
 
-// Event filter for queue row hover label recolor (inactive rows).
+// Event filter for queue row hover label recolor (inactive rows) and
+// drag-to-reorder within the manual queue (rows carrying a "queueIndex").
 bool QueuePage::eventFilter(QObject *obj, QEvent *event)
 {
     auto *btn = qobject_cast<QPushButton *>(obj);
     if (!btn)
         return QWidget::eventFilter(obj, event);
+
+    const QVariant queueIdx = btn->property("queueIndex");
+    if (queueIdx.isValid()) {
+        switch (event->type()) {
+        case QEvent::MouseButtonPress: {
+            auto *me = static_cast<QMouseEvent *>(event);
+            if (me->button() == Qt::LeftButton) m_dragStartPos = me->pos();
+            break;
+        }
+        case QEvent::MouseMove: {
+            auto *me = static_cast<QMouseEvent *>(event);
+            if ((me->buttons() & Qt::LeftButton)
+                && (me->pos() - m_dragStartPos).manhattanLength() >= QApplication::startDragDistance()) {
+                auto *drag = new QDrag(btn);
+                auto *mime = new QMimeData();
+                mime->setData(kQueueMime, QByteArray::number(queueIdx.toInt()));
+                drag->setMimeData(mime);
+                drag->setPixmap(btn->grab());
+                drag->setHotSpot(me->pos());
+                drag->exec(Qt::MoveAction);
+                btn->setDown(false); // exec() eats the matching release
+                return true;
+            }
+            break;
+        }
+        case QEvent::DragEnter: {
+            auto *de = static_cast<QDragEnterEvent *>(event);
+            if (de->mimeData()->hasFormat(kQueueMime)) { de->acceptProposedAction(); return true; }
+            break;
+        }
+        case QEvent::DragMove: {
+            auto *de = static_cast<QDragMoveEvent *>(event);
+            if (de->mimeData()->hasFormat(kQueueMime)) { de->acceptProposedAction(); return true; }
+            break;
+        }
+        case QEvent::Drop: {
+            auto *de = static_cast<QDropEvent *>(event);
+            if (de->mimeData()->hasFormat(kQueueMime)) {
+                const int from = de->mimeData()->data(kQueueMime).toInt();
+                const int to = queueIdx.toInt();
+                de->acceptProposedAction();
+                if (from != to) emit reorderQueueRequested(from, to);
+                return true;
+            }
+            break;
+        }
+        default: break;
+        }
+    }
 
     auto *title = btn->findChild<QLabel *>(QStringLiteral("queueTitle"));
     auto *artist = btn->findChild<QLabel *>(QStringLiteral("queueArtist"));

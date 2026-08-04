@@ -245,7 +245,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_queuePage, &QueuePage::removeFromQueueRequested, this, [this](int index) {
         m_playerBar->removeFromQueue(index);
     });
-    connect(m_queuePage, &QueuePage::navigateBack, this, [this]() { m_queuePage->hide(); });
+    connect(m_queuePage, &QueuePage::clearQueueRequested, this, [this]() {
+        m_playerBar->clearUserQueue();
+    });
+    connect(m_queuePage, &QueuePage::reorderQueueRequested, this, [this](int from, int to) {
+        m_playerBar->reorderUserQueue(from, to);
+    });
+    connect(m_queuePage, &QueuePage::navigateBack, this, [this]() { hideQueuePanel(); });
 
     // Search page
     connect(m_searchPage, &SearchPage::playRequested, this, &MainWindow::onTrackPlay);
@@ -264,27 +270,8 @@ MainWindow::MainWindow(QWidget *parent)
         refreshCurrentPage();
     });
     connect(m_playerBar, &PlayerBar::queueRequested, this, [this]() {
-        if (m_queuePage->isVisible()) {
-            m_queuePage->hide();
-        } else {
-            m_queuePage->refresh(m_playerBar->currentTrackId(), m_playerBar->isPlaying());
-            m_queuePage->show();
-            // Responsive default width: ~28% of window, clamped; restore last drag.
-            const int winW = qMax(720, width());
-            const int defW = qBound(200, winW / 4 + 40, 360);
-            int queueW = QSettings().value("queueWidth", defW).toInt();
-            queueW = qBound(180, queueW, qMin(480, winW / 2));
-            m_queuePage->setMinimumWidth(180);
-            m_queuePage->setMaximumWidth(qMin(480, qMax(220, winW / 2)));
-            auto sizes = m_splitter->sizes();
-            if (sizes.size() == 3) {
-                const int total = sizes[0] + sizes[1] + sizes[2];
-                const int contentMin = qMax(280, winW / 3);
-                queueW = qMin(queueW, total - sizes[0] - contentMin);
-                queueW = qMax(180, queueW);
-                m_splitter->setSizes({sizes[0], total - sizes[0] - queueW, queueW});
-            }
-        }
+        if (m_queuePage->isVisible()) hideQueuePanel();
+        else showQueuePanel();
     });
     connect(m_playerBar, &PlayerBar::queueChanged, this, [this]() { refreshCurrentPage(); });
 
@@ -311,6 +298,39 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Initial state
     navigateTo("home");
+
+    // Restore the queue panel's open/closed state from the last session.
+    if (QSettings().value(QStringLiteral("queueOpen"), false).toBool())
+        showQueuePanel();
+}
+
+void MainWindow::showQueuePanel()
+{
+    m_queuePage->refresh(m_playerBar->currentTrackId(), m_playerBar->isPlaying());
+    m_queuePage->show();
+    QSettings().setValue(QStringLiteral("queueOpen"), true);
+
+    // Responsive default width: ~28% of window, clamped; restore last drag.
+    const int winW = qMax(720, width());
+    const int defW = qBound(200, winW / 4 + 40, 360);
+    int queueW = QSettings().value("queueWidth", defW).toInt();
+    queueW = qBound(180, queueW, qMin(480, winW / 2));
+    m_queuePage->setMinimumWidth(180);
+    m_queuePage->setMaximumWidth(qMin(480, qMax(220, winW / 2)));
+    auto sizes = m_splitter->sizes();
+    if (sizes.size() == 3) {
+        const int total = sizes[0] + sizes[1] + sizes[2];
+        const int contentMin = qMax(280, winW / 3);
+        queueW = qMin(queueW, total - sizes[0] - contentMin);
+        queueW = qMax(180, queueW);
+        m_splitter->setSizes({sizes[0], total - sizes[0] - queueW, queueW});
+    }
+}
+
+void MainWindow::hideQueuePanel()
+{
+    m_queuePage->hide();
+    QSettings().setValue(QStringLiteral("queueOpen"), false);
 }
 
 void MainWindow::showEvent(QShowEvent *event)
@@ -1209,17 +1229,23 @@ void MainWindow::refreshCurrentPage() {
 
 void MainWindow::onTrackPlay(const Track &track) {
     // Build the playback queue from the context the track was launched in, so
-    // each playlist plays within itself instead of the whole library.
+    // each playlist plays within itself instead of the whole library. The name
+    // travels alongside it so the queue panel can label "A seguir" like Spotify's
+    // "Next from: <playlist>".
     QList<Track> queue;
+    QString contextName;
     if (m_currentPage == "folder") {
         // Use the page's displayed order so next/prev follow the sort mode.
         queue = m_folderDetailPage->displayedTracks();
+        contextName = m_folderDetailPage->property("folderName").toString();
     } else if (m_currentPage == "liked") {
         queue = m_model->likedTracks();
+        contextName = Lang::tr("Curtidas");
     } else {
-        queue = m_model->tracks();   // home / full library
+        queue = m_model->tracks();   // home / full library / search
+        contextName = Lang::tr("Biblioteca Completa");
     }
-    m_playerBar->playTrack(track, queue);
+    m_playerBar->playTrack(track, queue, contextName);
     refreshCurrentPage();
 }
 
