@@ -204,7 +204,7 @@ void ImportPlaylistDialog::parseSpotifyEmbed(const QByteArray &html) {
     }
 
     if (entity.isEmpty()) {
-        showError(Lang::tr("Não foi possível ler a playlist do Spotify. Verifique se o link é público e tente novamente."));
+        showError(Lang::tr("Não foi possível ler a playlist do Spotify. Playlists privadas não podem ser importadas — torne a playlist pública e tente novamente."));
         return;
     }
 
@@ -238,13 +238,19 @@ void ImportPlaylistDialog::fetchYouTubePlaylist() {
     m_proc = new QProcess(this);
     connect(m_proc, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus st) {
         QByteArray out = m_proc->readAllStandardOutput();
+        QByteArray err = m_proc->readAllStandardError();
         m_proc->deleteLater();
         m_proc = nullptr;
         if (m_cancelled) return;
 
         QJsonDocument doc = QJsonDocument::fromJson(out);
         if (exitCode != 0 || st != QProcess::NormalExit || !doc.isObject()) {
-            showError(Lang::tr("Não foi possível listar a playlist do YouTube. Verifique o link."));
+            // yt-dlp reports private/members-only playlists on stderr — surface
+            // that distinctly instead of the generic "check the link" message.
+            if (err.contains("private") || err.contains("Private"))
+                showError(Lang::tr("Esta playlist do YouTube é privada e não pode ser importada. Torne-a pública ou não listada e tente novamente."));
+            else
+                showError(Lang::tr("Não foi possível listar a playlist do YouTube. Verifique o link."));
             return;
         }
 
