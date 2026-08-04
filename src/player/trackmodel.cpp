@@ -1,6 +1,7 @@
 #include "trackmodel.h"
 #include "database.h"
 #include "mediatools.h"
+#include "position_gap.h"
 #include <QRandomGenerator>
 #include <QPair>
 #include <algorithm>
@@ -318,13 +319,8 @@ void TrackModel::reorderPlaylist(int playlistId, const QList<int> &orderedTrackI
 {
     if (playlistId <= 0) return;
 
-    QList<QPair<int, qint64>> positions;
-    positions.reserve(orderedTrackIds.size());
-    for (int i = 0; i < orderedTrackIds.size(); ++i) {
-        const qint64 pos = static_cast<qint64>(i + 1) * 1024;
-        positions.append(qMakePair(orderedTrackIds[i], pos));
-    }
-    Database::instance().setPlaylistTrackPositions(playlistId, positions);
+    Database::instance().setPlaylistTrackPositions(
+        playlistId, lumen::position::renormalise(orderedTrackIds));
     invalidatePlaylistCache();
     emit tracksChanged();
 }

@@ -1,6 +1,7 @@
 #include "database.h"
 #include "migrator.h"
 #include "mediatools.h"
+#include "position_gap.h"
 
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -728,10 +729,7 @@ void Database::normalisePlaylistPositions(int playlistId)
     while (sel.next())
         ids.append(sel.value(0).toInt());
 
-    QList<QPair<int, qint64>> positions;
-    for (int i = 0; i < ids.size(); ++i)
-        positions.append(qMakePair(ids[i], static_cast<qint64>(i + 1) * 1024));
-    setPlaylistTrackPositions(playlistId, positions);
+    setPlaylistTrackPositions(playlistId, lumen::position::renormalise(ids));
 }
 
 AddToPlaylistResult Database::addTrackToPlaylist(int trackId, int playlistId)
