@@ -17,7 +17,8 @@ public:
     PlaybackEngine *engine() const { return m_engine; }
 
     // Thin facades so existing MainWindow/QueuePage call sites keep working.
-    void playTrack(const Track &track, const QList<Track> &queue = QList<Track>());
+    void playTrack(const Track &track, const QList<Track> &queue = QList<Track>(),
+                    const QString &contextName = QString());
     void playKeepingContext(const Track &track);
     void togglePlay();
     void next();
@@ -25,8 +26,11 @@ public:
     void enqueue(const Track &track);
     void removeFromQueue(int index);
     bool takeFromQueue(int index, Track &out);
+    void clearUserQueue();
+    void reorderUserQueue(int from, int to);
     QList<Track> userQueue() const;
     QList<Track> upcomingContext() const;
+    QString contextName() const;
     Track currentTrack() const;
     bool isPlaying() const;
     int  currentTrackId() const;

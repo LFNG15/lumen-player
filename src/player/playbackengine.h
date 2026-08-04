@@ -20,7 +20,8 @@ public:
     explicit PlaybackEngine(TrackModel *model, QObject *parent = nullptr);
 
     // --- Transport ---
-    void playTrack(const Track &track, const QList<Track> &queue = QList<Track>());
+    void playTrack(const Track &track, const QList<Track> &queue = QList<Track>(),
+                    const QString &contextName = QString());
     void playKeepingContext(const Track &track);
     void togglePlay();
     void next();
@@ -46,9 +47,11 @@ public:
     void removeFromQueue(int index);
     bool takeFromQueue(int index, Track &out);
     void clearUserQueue();
+    void reorderUserQueue(int from, int to);
     QList<Track> userQueue() const { return m_userQueue; }
     QList<Track> contextQueue() const;
     QList<Track> upcomingContext() const;
+    QString contextName() const { return m_contextName; }
 
     Track currentTrack() const { return m_currentTrack; }
     int   currentTrackId() const { return m_currentTrackId; }
@@ -91,6 +94,9 @@ private:
     int        m_currentTrackId = 0;
     Track      m_currentTrack;
     QList<Track> m_context;     // playback context; empty = full library
+    QString      m_contextName; // display name of m_context (e.g. folder/"Curtidas")
+    int          m_contextIndex = -1; // last known position in m_context, kept while
+                                       // a manual-queue track (not part of m_context) plays
     QList<Track> m_userQueue;   // manual "up next"
 
     bool       m_shuffle = false;

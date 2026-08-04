@@ -33,9 +33,12 @@ PlaybackEngine::PlaybackEngine(TrackModel *model, QObject *parent)
 
 // --- Transport ----------------------------------------------------------------
 
-void PlaybackEngine::playTrack(const Track &track, const QList<Track> &queue)
+void PlaybackEngine::playTrack(const Track &track, const QList<Track> &queue,
+                               const QString &contextName)
 {
     m_context = queue;
+    m_contextName = contextName;
+    m_contextIndex = -1; // recomputed by loadAndPlay() once the track is loaded
     if (m_shuffle)
         rebuildShuffleBag();
 
@@ -60,6 +63,13 @@ void PlaybackEngine::loadAndPlay(const Track &track, bool markPlayed)
     m_currentTrackId = track.id;
     m_currentTrack   = track;
     m_pendingSeekMs  = 0;
+
+    // Track our place in the context so a detour through a manually-queued
+    // track (not part of m_context) doesn't lose it — findInContext() would
+    // return -1 for that track and next()/upcomingContext() would otherwise
+    // think the context is exhausted instead of just paused.
+    const int idx = findInContext(track.id);
+    if (idx >= 0) m_contextIndex = idx;
     m_player->setSource(track.audioUrl);
     m_player->play();
 
@@ -173,6 +183,7 @@ void PlaybackEngine::next()
     if (queue.isEmpty()) return;
 
     int idx = findInContext(m_currentTrackId);
+    if (idx < 0) idx = m_contextIndex; // currently on a manual-queue track — resume from there
     if (idx < 0) {
         loadAndPlay(queue.first());
         return;
@@ -206,6 +217,7 @@ void PlaybackEngine::prev()
     if (queue.isEmpty()) return;
 
     int idx = findInContext(m_currentTrackId);
+    if (idx < 0) idx = m_contextIndex; // currently on a manual-queue track — resume from there
     if (idx < 0) return;
 
     int prevIdx;
@@ -309,10 +321,19 @@ void PlaybackEngine::clearUserQueue()
     emit queueChanged();
 }
 
+void PlaybackEngine::reorderUserQueue(int from, int to)
+{
+    if (from < 0 || from >= m_userQueue.size() || to < 0 || to >= m_userQueue.size() || from == to)
+        return;
+    m_userQueue.move(from, to);
+    emit queueChanged();
+}
+
 QList<Track> PlaybackEngine::upcomingContext() const
 {
     const QList<Track> &q = activeContext();
-    const int idx = findInContext(m_currentTrackId);
+    int idx = findInContext(m_currentTrackId);
+    if (idx < 0) idx = m_contextIndex; // currently on a manual-queue track — show what's paused
     if (idx < 0) return {};
     return q.mid(idx + 1);
 }
@@ -373,6 +394,9 @@ void PlaybackEngine::persistState()
     for (const auto &t : m_userQueue)
         s.userQueueIds.append(t.id);
 
+    s.contextIndex = m_contextIndex;
+    s.contextName  = m_contextName;
+
     Database::instance().saveState(s);
 }
 
@@ -409,6 +433,12 @@ void PlaybackEngine::restoreSession()
 
     m_currentTrackId = t->id;
     m_currentTrack   = *t;
+    m_contextName    = s.contextName;
+    // Prefer the persisted position (valid across a manual-queue detour); fall
+    // back to a fresh lookup if the context shrank (e.g. tracks removed) and
+    // the saved index no longer lines up.
+    m_contextIndex = (s.contextIndex >= 0 && s.contextIndex < m_context.size())
+        ? s.contextIndex : findInContext(m_currentTrackId);
     m_player->setSource(t->audioUrl);
     m_player->pause();
     m_pendingSeekMs = s.posMs;

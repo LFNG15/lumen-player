@@ -339,7 +339,9 @@ void PlayerBar::syncTransportUi()
 
 // Facades -------------------------------------------------------------------
 
-void PlayerBar::playTrack(const Track &t, const QList<Track> &q) { m_engine->playTrack(t, q); }
+void PlayerBar::playTrack(const Track &t, const QList<Track> &q, const QString &contextName) {
+    m_engine->playTrack(t, q, contextName);
+}
 void PlayerBar::playKeepingContext(const Track &t) { m_engine->playKeepingContext(t); }
 void PlayerBar::togglePlay() { m_engine->togglePlay(); }
 void PlayerBar::next() { m_engine->next(); }
@@ -347,8 +349,11 @@ void PlayerBar::prev() { m_engine->prev(); }
 void PlayerBar::enqueue(const Track &t) { m_engine->enqueue(t); }
 void PlayerBar::removeFromQueue(int i) { m_engine->removeFromQueue(i); }
 bool PlayerBar::takeFromQueue(int i, Track &o) { return m_engine->takeFromQueue(i, o); }
+void PlayerBar::clearUserQueue() { m_engine->clearUserQueue(); }
+void PlayerBar::reorderUserQueue(int from, int to) { m_engine->reorderUserQueue(from, to); }
 QList<Track> PlayerBar::userQueue() const { return m_engine->userQueue(); }
 QList<Track> PlayerBar::upcomingContext() const { return m_engine->upcomingContext(); }
+QString PlayerBar::contextName() const { return m_engine->contextName(); }
 Track PlayerBar::currentTrack() const { return m_engine->currentTrack(); }
 bool PlayerBar::isPlaying() const { return m_engine->isPlaying(); }
 int  PlayerBar::currentTrackId() const { return m_engine->currentTrackId(); }
