@@ -30,9 +30,10 @@ public:
     };
 
     struct Source {
-        enum Kind { All, Playlist, Liked, Standalone } kind = All;
+        enum Kind { All, Playlist, Liked, Standalone, RecentlyAdded, RecentlyPlayed } kind = All;
         int     playlistId = 0;
         QString playlistName; // for reorder persistence by name
+        int     limit = 0;    // RecentlyAdded/RecentlyPlayed only; 0 falls back to TrackModel's default (8)
     };
 
     explicit TrackListModel(TrackModel *library, QObject *parent = nullptr);

@@ -72,6 +72,14 @@ void TrackListModel::reload()
         for (const auto &t : m_library->standaloneTracks())
             ids.append(t.id);
         break;
+    case Source::RecentlyAdded:
+        for (const auto &t : m_library->recentTracks(m_source.limit > 0 ? m_source.limit : 8))
+            ids.append(t.id);
+        break;
+    case Source::RecentlyPlayed:
+        for (const auto &t : m_library->recentlyPlayed(m_source.limit > 0 ? m_source.limit : 8))
+            ids.append(t.id);
+        break;
     }
 
     beginResetModel();
