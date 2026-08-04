@@ -336,4 +336,16 @@ if(LUMEN_BUILD_TESTS)
     lumen_add_test(test_migrator
         tests/test_migrator.cpp
         src/database/migrator.cpp)
+
+    lumen_add_test(test_database_playlist
+        tests/test_database_playlist.cpp
+        src/database/database.cpp
+        src/database/migrator.cpp
+        src/player/trackmodel.cpp
+        src/design/tokens.cpp
+        src/design/palettes.cpp
+        src/design/thememanager.cpp
+        src/design/stylesheet.cpp
+        src/design/paint.cpp)
+    target_link_libraries(test_database_playlist PRIVATE Qt6::Network)
 endif()
