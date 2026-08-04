@@ -35,7 +35,6 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void showEvent(QShowEvent *event) override;
-    void changeEvent(QEvent *event) override;
 
 private slots:
     void navigateTo(const QString &page, const QString &data = "");
@@ -69,7 +68,6 @@ private:
     lumen::platform::MediaKeys *m_mediaKeys = nullptr;
     lumen::platform::TrayIcon  *m_tray = nullptr;
     bool m_platformReady = false;
-    bool m_minimizeToTray = true;
 
     QStackedWidget *m_stack;
     HomePage *m_homePage;

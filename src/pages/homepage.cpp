@@ -230,9 +230,7 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         lumen::design::StyleSheet::apply(playedLabel, QString("color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
         m_contentLayout->addWidget(playedLabel);
 
-        for (int i = 0; i < played.size(); ++i) {
-            m_contentLayout->addWidget(createTrackRow(played[i], i, currentTrackId, isPlaying));
-        }
+        m_contentLayout->addLayout(createTrackList(played, currentTrackId, isPlaying));
         m_contentLayout->addSpacing(16);
     }
 
@@ -244,9 +242,7 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         lumen::design::StyleSheet::apply(recentLabel, QString("color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
         m_contentLayout->addWidget(recentLabel);
 
-        for (int i = 0; i < recent.size(); ++i) {
-            m_contentLayout->addWidget(createTrackRow(recent[i], i, currentTrackId, isPlaying));
-        }
+        m_contentLayout->addLayout(createTrackList(recent, currentTrackId, isPlaying));
         m_contentLayout->addSpacing(16);
     }
 
@@ -256,23 +252,33 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     lumen::design::StyleSheet::apply(allLabel, QString("color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
     m_contentLayout->addWidget(allLabel);
 
-    auto &all = m_model->tracks();
-    for (int i = 0; i < all.size(); ++i) {
-        m_contentLayout->addWidget(createTrackRow(all[i], i, currentTrackId, isPlaying));
-    }
+    m_contentLayout->addLayout(createTrackList(m_model->tracks(), currentTrackId, isPlaying));
     m_contentLayout->addStretch();
+}
+
+QVBoxLayout *HomePage::createTrackList(const QList<Track> &tracks, int currentId, bool isPlaying) {
+    // Tighter than m_contentLayout's spacing(12) — that value is shared with
+    // section headers/chip grids, so row-to-row air is set locally here
+    // (mirrors the QListView setSpacing(2) tuning used on the list pages).
+    auto *list = new QVBoxLayout();
+    list->setContentsMargins(0, 0, 0, 0);
+    list->setSpacing(0);
+    for (int i = 0; i < tracks.size(); ++i)
+        list->addWidget(createTrackRow(tracks[i], i, currentId, isPlaying));
+    return list;
 }
 
 QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, bool isPlaying) {
     bool active = (track.id == currentId);
     auto *row = new QWidget();
-    row->setFixedHeight(60);
+    row->setFixedHeight(52);
     row->setCursor(Qt::PointingHandCursor);
     lumen::design::StyleSheet::apply(row, QStringLiteral("background: transparent;"));
 
-    // Outer pad — more top/bottom so the orange wash is not edge-to-edge.
+    // Outer pad so the wash isn't edge-to-edge; kept tight since rows in a
+    // list are already separated by createTrackList's own spacing.
     auto *outer = new QVBoxLayout(row);
-    outer->setContentsMargins(6, 7, 6, 7);
+    outer->setContentsMargins(6, 3, 6, 3);
     outer->setSpacing(0);
 
     auto *inner = new QWidget(row);
@@ -419,7 +425,7 @@ QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, 
     // Click to play via transparent overlay on the padded inner row.
     Track t = track;
     auto *overlay = new QPushButton(inner);
-    overlay->setGeometry(0, 0, 9999, 56);
+    overlay->setGeometry(0, 0, 9999, 46);
     lumen::design::StyleSheet::apply(overlay, QStringLiteral(
         "QPushButton { background: transparent; border: none; }"
         "QPushButton:hover { background: transparent; }"));

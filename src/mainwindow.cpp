@@ -382,7 +382,6 @@ void MainWindow::setupPlatformIntegration()
             activateWindow();
         });
         connect(m_tray, &lumen::platform::TrayIcon::quitRequested, this, [this]() {
-            m_minimizeToTray = false;
             close();
         });
     }
@@ -438,20 +437,6 @@ void MainWindow::onNowPlayingCommand(lumen::platform::TransportCommand cmd, qint
         m_engine->seek(argMs);
         break;
     }
-}
-
-void MainWindow::changeEvent(QEvent *event)
-{
-    if (event->type() == QEvent::WindowStateChange
-        && isMinimized()
-        && m_minimizeToTray
-        && m_tray
-        && m_tray->isAvailable()) {
-        hide();
-        event->ignore();
-        return;
-    }
-    QMainWindow::changeEvent(event);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
