@@ -88,8 +88,8 @@ void TrackRowDelegate::paint(QPainter *p, const QStyleOptionViewItem &option,
     // Translucent accent wash + light (onAccent) text — not solid fill.
     const bool accentRow = current || hover;
 
-    // Playlist list rows only (Home uses its own shell). Slightly more inset
-    // than before so the orange wash matches the ideal margins elsewhere.
+    // Shared by every list page, including Home's three lists. Slightly more
+    // inset than before so the orange wash matches the ideal margins elsewhere.
     constexpr int kWashPadH = 8;
     constexpr int kWashPadV = 5;
     const QRect washR = option.rect.adjusted(kWashPadH, kWashPadV, -kWashPadH, -kWashPadV);

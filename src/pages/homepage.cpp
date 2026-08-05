@@ -1,7 +1,9 @@
 #include "design/stylesheet.h"
+#include "design/thememanager.h"
 #include "homepage.h"
 #include "lang.h"
 #include "models/trackcontextmenu.h"
+#include "models/trackrowdelegate.h"
 #include <QLabel>
 #include <QPushButton>
 #include <QGridLayout>
@@ -13,14 +15,29 @@
 #include <QResizeEvent>
 #include <QFontMetrics>
 #include <QPixmap>
-#include "hoverplayfilter.h"
+#include <QListView>
+#include <QShortcut>
+#include <QWheelEvent>
 #include "coverwidget.h"
+
+// A shelf QListView never scrolls itself — wheel events pass through to the
+// page's outer QScrollArea instead of getting stuck in a (possibly slightly
+// mis-sized, see updateShelfHeight()) internal scroll range.
+namespace {
+class NonScrollingListView : public QListView {
+public:
+    using QListView::QListView;
+protected:
+    void wheelEvent(QWheelEvent *event) override { event->ignore(); }
+};
+} // namespace
 
 HomePage::HomePage(TrackModel *model, QWidget *parent)
     : QWidget(parent), m_model(model)
 {
     auto *outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(0, 0, 0, 0);
+    outerLayout->setSpacing(0);
 
     m_ctx = new TrackContextMenu(m_model, this);
     connect(m_ctx, &TrackContextMenu::enqueueRequested, this, &HomePage::enqueueRequested);
@@ -33,6 +50,7 @@ HomePage::HomePage(TrackModel *model, QWidget *parent)
         // Parent MainWindow also refreshes on tracksChanged for most edits.
     });
 
+    // ── Top region: greeting/chips/"Recentes" strip + 2 capped shelves ──────
     m_scroll = new QScrollArea(this);
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
@@ -40,12 +58,43 @@ HomePage::HomePage(TrackModel *model, QWidget *parent)
 
     auto *content = new QWidget();
     lumen::design::StyleSheet::apply(content, "background: transparent;");
-    m_contentLayout = new QVBoxLayout(content);
-    m_contentLayout->setContentsMargins(32, 28, 32, 28);
-    m_contentLayout->setSpacing(12);
+    auto *contentLayout = new QVBoxLayout(content);
+    contentLayout->setContentsMargins(32, 28, 32, 28);
+    contentLayout->setSpacing(12);
+
+    // Dynamic sub-region: Folder-shaped content (greeting, chips, recents
+    // cards) is unaffected by this migration and keeps its old
+    // tear-down-and-rebuild-every-refresh() behavior, scoped to its own layout
+    // instead of the whole page.
+    m_dynamicRegion = new QWidget(content);
+    lumen::design::StyleSheet::apply(m_dynamicRegion, "background: transparent;");
+    m_dynamicLayout = new QVBoxLayout(m_dynamicRegion);
+    m_dynamicLayout->setContentsMargins(0, 0, 0, 0);
+    m_dynamicLayout->setSpacing(12);
+    contentLayout->addWidget(m_dynamicRegion);
+
+    m_playedSection = buildShelf(Lang::tr("Tocadas recentemente"),
+        TrackListModel::Source::RecentlyPlayed, 8, /*allowDelete=*/false,
+        &m_playedView, &m_playedModel);
+    contentLayout->addWidget(m_playedSection);
+
+    m_addedSection = buildShelf(Lang::tr("Adicionadas recentemente"),
+        TrackListModel::Source::RecentlyAdded, 8, /*allowDelete=*/false,
+        &m_addedView, &m_addedModel);
+    contentLayout->addWidget(m_addedSection);
+    contentLayout->addStretch();
 
     m_scroll->setWidget(content);
-    outerLayout->addWidget(m_scroll);
+    outerLayout->addWidget(m_scroll, 1);
+
+    // ── Bottom region: "Biblioteca Completa" — unbounded, so it keeps its own
+    // independent scroll instead of nesting inside m_scroll. This project
+    // already tried nested scroll areas for the other list pages and rejected
+    // them (double scrollbar) — same reasoning applies here.
+    m_librarySection = buildShelf(Lang::tr("Biblioteca Completa"),
+        TrackListModel::Source::All, 0, /*allowDelete=*/true,
+        &m_libraryView, &m_libraryModel);
+    outerLayout->addWidget(m_librarySection, 1);
 }
 
 int HomePage::chipColumnsForWidth(int w) const
@@ -65,13 +114,157 @@ void HomePage::resizeEvent(QResizeEvent *event)
     }
 }
 
+QWidget *HomePage::buildShelf(const QString &labelText, TrackListModel::Source::Kind kind,
+                              int limit, bool allowDelete,
+                              QListView **outView, TrackListModel **outModel)
+{
+    auto *section = new QWidget();
+    lumen::design::StyleSheet::apply(section, "background: transparent;");
+    auto *sectionLayout = new QVBoxLayout(section);
+    sectionLayout->setContentsMargins(0, 0, 0, 0);
+    sectionLayout->setSpacing(4);
+
+    auto *label = new QLabel(labelText, section);
+    label->setFont(Theme::titleFont(18));
+    lumen::design::StyleSheet::apply(label, QString(
+        "color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
+    sectionLayout->addWidget(label);
+
+    auto *model = new TrackListModel(m_model, section);
+    TrackListModel::Source src;
+    src.kind = kind;
+    src.limit = limit;
+    model->setSource(src);
+    model->setReorderEnabled(false);
+
+    auto *view = limit > 0 ? new NonScrollingListView(section) : new QListView(section);
+    view->setModel(model);
+    view->setUniformItemSizes(true);
+    view->setLayoutMode(QListView::Batched);
+    view->setResizeMode(QListView::Adjust);
+    view->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    view->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    view->setMouseTracking(true);
+    view->setFrameShape(QFrame::NoFrame);
+    view->setSpacing(2);
+    view->setContextMenuPolicy(Qt::CustomContextMenu);
+    lumen::design::StyleSheet::apply(view, QStringLiteral(
+        "QListView { background: transparent; border: none; outline: none; }"));
+    if (limit > 0) {
+        // Capped shelf: height follows content (see updateShelfHeight()), no
+        // internal scrollbar, and it shouldn't steal keyboard focus from the
+        // page just for being present.
+        view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        view->setFocusPolicy(Qt::NoFocus);
+    }
+
+    auto *delegate = new TrackRowDelegate(view);
+    view->setItemDelegate(delegate);
+
+    connect(delegate, &TrackRowDelegate::playClicked, this, [this, model](const QModelIndex &idx) {
+        const int id = model->trackIdAt(idx.row());
+        if (Track *t = m_model->findTrack(id)) emit playRequested(*t);
+    });
+    connect(delegate, &TrackRowDelegate::likeClicked, this, [this, model](const QModelIndex &idx) {
+        const int id = model->trackIdAt(idx.row());
+        if (id > 0) emit likeToggled(id);
+    });
+    connect(delegate, &TrackRowDelegate::moreClicked, this,
+            [this, model, view](const QModelIndex &idx, const QPoint &gp) {
+        QList<int> ids = selectedIds(view, model);
+        if (ids.isEmpty()) {
+            const int id = model->trackIdAt(idx.row());
+            if (id > 0) ids.append(id);
+        }
+        if (!ids.isEmpty())
+            m_ctx->popupAddMenu(ids, gp);
+    });
+    connect(view, &QListView::customContextMenuRequested, this, [this, model, view](const QPoint &pos) {
+        const auto ids = selectedIds(view, model);
+        if (!ids.isEmpty())
+            m_ctx->popup(ids, view->viewport()->mapToGlobal(pos));
+    });
+
+    // Keyboard shortcuts only on the unbounded (library) list. All three lists
+    // are visible on Home at once — unlike FolderDetailPage/LikedPage/SearchPage,
+    // where only one is ever visible, so Qt's default WindowShortcut context
+    // never has to disambiguate between them. Registering the same Space/L/Q/Menu
+    // shortcuts on all three here would make them ambiguous whenever no view has
+    // focus. The two capped shelves already can't take focus (NoFocus above) —
+    // they're mouse/click only, consistent with being a preview, not a primary list.
+    if (limit == 0) {
+        auto *spaceKey = new QShortcut(Qt::Key_Space, view);
+        connect(spaceKey, &QShortcut::activated, this, [this, model, view]() {
+            const auto ids = selectedIds(view, model);
+            if (ids.isEmpty()) return;
+            if (Track *t = m_model->findTrack(ids.first())) emit playRequested(*t);
+        });
+        auto *likeKey = new QShortcut(Qt::Key_L, view);
+        connect(likeKey, &QShortcut::activated, this, [this, model, view]() {
+            for (int id : selectedIds(view, model)) emit likeToggled(id);
+        });
+        auto *qKey = new QShortcut(Qt::Key_Q, view);
+        connect(qKey, &QShortcut::activated, this, [this, model, view]() {
+            for (int id : selectedIds(view, model))
+                if (Track *t = m_model->findTrack(id)) emit enqueueRequested(*t);
+        });
+        auto *menuKey = new QShortcut(Qt::Key_Menu, view);
+        connect(menuKey, &QShortcut::activated, this, [this, model, view]() {
+            const auto ids = selectedIds(view, model);
+            if (!ids.isEmpty()) m_ctx->popup(ids, QCursor::pos());
+        });
+        if (allowDelete) {
+            auto *delKey = new QShortcut(QKeySequence::Delete, view);
+            connect(delKey, &QShortcut::activated, this, [this, model, view]() {
+                for (int id : selectedIds(view, model)) emit deleteRequested(id);
+            });
+        }
+    }
+
+    sectionLayout->addWidget(view);
+
+    if (outView) *outView = view;
+    if (outModel) *outModel = model;
+    return section;
+}
+
+void HomePage::updateShelfHeight(QListView *view, TrackListModel *model)
+{
+    const int rows = model->rowCount();
+    if (rows <= 0) {
+        view->setFixedHeight(0);
+        return;
+    }
+    const int rh = lumen::design::ThemeManager::m().rowHeight;
+    // Estimate: no existing precedent in this codebase for a content-sized,
+    // non-scrolling QListView — visually confirm against live rowHeight/
+    // density changes rather than trusting this formula to be pixel-exact.
+    view->setFixedHeight(rows * rh + (rows - 1) * view->spacing());
+}
+
+QList<int> HomePage::selectedIds(QListView *view, TrackListModel *model) const
+{
+    QList<int> ids;
+    for (const QModelIndex &idx : view->selectionModel()->selectedRows()) {
+        const int id = model->trackIdAt(idx.row());
+        if (id > 0) ids.append(id);
+    }
+    if (ids.isEmpty() && view->currentIndex().isValid()) {
+        const int id = model->trackIdAt(view->currentIndex().row());
+        if (id > 0) ids.append(id);
+    }
+    return ids;
+}
+
 void HomePage::refresh(int currentTrackId, bool isPlaying) {
     m_lastCurrentId = currentTrackId;
     m_lastPlaying = isPlaying;
     m_lastChipCols = chipColumnsForWidth(width());
-    // Clear existing
+
+    // Clear only the dynamic region (greeting/chips/recents) — the three track
+    // lists below reload() their existing models instead of being torn down.
     QLayoutItem *item;
-    while ((item = m_contentLayout->takeAt(0)) != nullptr) {
+    while ((item = m_dynamicLayout->takeAt(0)) != nullptr) {
         if (item->widget()) item->widget()->deleteLater();
         if (item->layout()) {
             QLayoutItem *sub;
@@ -89,7 +282,7 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     auto *greetLabel = new QLabel(greeting);
     greetLabel->setFont(Theme::titleFont(28));
     lumen::design::StyleSheet::apply(greetLabel, QString("color: %1; background: transparent; padding-bottom: 8px;").arg(Theme::text().name()));
-    m_contentLayout->addWidget(greetLabel);
+    m_dynamicLayout->addWidget(greetLabel);
 
     if (m_model->tracks().isEmpty()) {
         // Empty state
@@ -123,10 +316,15 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         emptyLayout->addWidget(addBtn, 0, Qt::AlignCenter);
 
         emptyWidget->setMinimumHeight(350);
-        m_contentLayout->addWidget(emptyWidget);
-        m_contentLayout->addStretch();
+        m_dynamicLayout->addWidget(emptyWidget);
+        m_playedSection->hide();
+        m_addedSection->hide();
+        m_librarySection->hide();
         return;
     }
+    m_playedSection->show();
+    m_addedSection->show();
+    m_librarySection->show();
 
     // ── Folder chips ────────────────────────────────────────
     auto folders = m_model->folders();
@@ -165,7 +363,7 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
             likedLayout->setContentsMargins(8, 8, 12, 8);
             likedLayout->setSpacing(10);
 
-            auto *heartCover = new QLabel("");
+            auto *heartCover = new QLabel("");
             heartCover->setFixedSize(48, 48);
             heartCover->setAttribute(Qt::WA_TransparentForMouseEvents);
             lumen::design::StyleSheet::apply(heartCover, QString(
@@ -215,8 +413,7 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         auto *gridWidget = new QWidget();
         gridWidget->setLayout(grid);
         lumen::design::StyleSheet::apply(gridWidget, "background: transparent;");
-        m_contentLayout->addWidget(gridWidget);
-        m_contentLayout->addSpacing(16);
+        m_dynamicLayout->addWidget(gridWidget);
     }
 
     // ── Recents: last played playlists (Spotify-style cards) ─
@@ -225,7 +422,7 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         auto *recentsLabel = new QLabel(Lang::tr("Recentes"));
         recentsLabel->setFont(Theme::titleFont(18));
         lumen::design::StyleSheet::apply(recentsLabel, QString("color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
-        m_contentLayout->addWidget(recentsLabel);
+        m_dynamicLayout->addWidget(recentsLabel);
 
         auto *cardsRow = new QHBoxLayout();
         cardsRow->setSpacing(12);
@@ -247,224 +444,22 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         lumen::design::StyleSheet::apply(strip, "QScrollArea { background: transparent; border: none; }");
         strip->setFixedHeight(206);
         strip->setWidget(rowWidget);
-        m_contentLayout->addWidget(strip);
-        m_contentLayout->addSpacing(16);
+        m_dynamicLayout->addWidget(strip);
     }
 
-    // ── Recently played (listening history) ─────────────────
-    auto played = m_model->recentlyPlayed(8);
-    if (!played.isEmpty()) {
-        auto *playedLabel = new QLabel(Lang::tr("Tocadas recentemente"));
-        playedLabel->setFont(Theme::titleFont(18));
-        lumen::design::StyleSheet::apply(playedLabel, QString("color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
-        m_contentLayout->addWidget(playedLabel);
+    // ── Track lists: reload the persistent models, no widget rebuild ────────
+    m_playedModel->reload();
+    m_playedModel->setPlaybackState(currentTrackId, isPlaying);
+    updateShelfHeight(m_playedView, m_playedModel);
+    m_playedSection->setVisible(m_playedModel->rowCount() > 0);
 
-        m_contentLayout->addLayout(createTrackList(played, currentTrackId, isPlaying));
-        m_contentLayout->addSpacing(16);
-    }
+    m_addedModel->reload();
+    m_addedModel->setPlaybackState(currentTrackId, isPlaying);
+    updateShelfHeight(m_addedView, m_addedModel);
+    m_addedSection->setVisible(m_addedModel->rowCount() > 0);
 
-    // ── Recent tracks ───────────────────────────────────────
-    auto recent = m_model->recentTracks(8);
-    if (!recent.isEmpty()) {
-        auto *recentLabel = new QLabel(Lang::tr("Adicionadas recentemente"));
-        recentLabel->setFont(Theme::titleFont(18));
-        lumen::design::StyleSheet::apply(recentLabel, QString("color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
-        m_contentLayout->addWidget(recentLabel);
-
-        m_contentLayout->addLayout(createTrackList(recent, currentTrackId, isPlaying));
-        m_contentLayout->addSpacing(16);
-    }
-
-    // ── All tracks ──────────────────────────────────────────
-    auto *allLabel = new QLabel(Lang::tr("Biblioteca Completa"));
-    allLabel->setFont(Theme::titleFont(18));
-    lumen::design::StyleSheet::apply(allLabel, QString("color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
-    m_contentLayout->addWidget(allLabel);
-
-    m_contentLayout->addLayout(createTrackList(m_model->tracks(), currentTrackId, isPlaying));
-    m_contentLayout->addStretch();
-}
-
-QVBoxLayout *HomePage::createTrackList(const QList<Track> &tracks, int currentId, bool isPlaying) {
-    // Tighter than m_contentLayout's spacing(12) — that value is shared with
-    // section headers/chip grids, so row-to-row air is set locally here
-    // (mirrors the QListView setSpacing(2) tuning used on the list pages).
-    auto *list = new QVBoxLayout();
-    list->setContentsMargins(0, 0, 0, 0);
-    list->setSpacing(0);
-    for (int i = 0; i < tracks.size(); ++i)
-        list->addWidget(createTrackRow(tracks[i], i, currentId, isPlaying));
-    return list;
-}
-
-QWidget *HomePage::createTrackRow(const Track &track, int index, int currentId, bool isPlaying) {
-    bool active = (track.id == currentId);
-    auto *row = new QWidget();
-    row->setFixedHeight(52);
-    row->setCursor(Qt::PointingHandCursor);
-    lumen::design::StyleSheet::apply(row, QStringLiteral("background: transparent;"));
-
-    // Outer pad so the wash isn't edge-to-edge; kept tight since rows in a
-    // list are already separated by createTrackList's own spacing.
-    auto *outer = new QVBoxLayout(row);
-    outer->setContentsMargins(6, 3, 6, 3);
-    outer->setSpacing(0);
-
-    auto *inner = new QWidget(row);
-    inner->setObjectName(QStringLiteral("trackRow"));
-    lumen::design::StyleSheet::apply(inner, QString(
-        "QWidget#trackRow { background: %1; border-radius: 8px; }"
-    ).arg(active ? Theme::accentRgba(0.32) : QStringLiteral("transparent")));
-    outer->addWidget(inner);
-
-    auto *layout = new QHBoxLayout(inner);
-    layout->setContentsMargins(12, 6, 12, 6);
-    layout->setSpacing(12);
-
-    const QString fg = active ? Theme::onAccent().name() : Theme::text().name();
-    const QString fgSoft = active ? Theme::onAccent().name() : Theme::textSoft().name();
-    const QString fgMuted = active ? Theme::onAccent().name() : Theme::textMuted().name();
-
-    // Index — shows a play glyph on the active row
-    QString idxNum = QString("%1").arg(index + 1, 2, 10, QChar('0'));
-    auto *idx = new QLabel(active ? QStringLiteral("\uE102") : idxNum);
-    idx->setFont(Theme::monoFont(12));
-    idx->setFixedWidth(28);
-    idx->setAlignment(Qt::AlignCenter);
-    lumen::design::StyleSheet::apply(idx, QString(
-        "color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;"
-    ).arg(active ? Theme::onAccent().name() : Theme::textMuted().name()));
-    idx->setAttribute(Qt::WA_TransparentForMouseEvents);
-    layout->addWidget(idx);
-
-    // Cover swatch
-    auto *swatch = new QWidget();
-    swatch->setFixedSize(38, 38);
-    swatch->setAttribute(Qt::WA_TransparentForMouseEvents);
-    lumen::design::StyleSheet::apply(swatch, QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1, stop:1 %2); border-radius: 6px;")
-        .arg(track.cover.c1.name(), track.cover.c2.name()));
-    layout->addWidget(swatch);
-
-    // Info
-    auto *infoLayout = new QVBoxLayout();
-    infoLayout->setSpacing(2);
-    auto *title = new QLabel(track.title);
-    title->setFont(Theme::bodyFont(13));
-    title->setAttribute(Qt::WA_TransparentForMouseEvents);
-    lumen::design::StyleSheet::apply(title, QString(
-        "color: %1; background: transparent; font-weight: 600;").arg(fg));
-    auto *artist = new QLabel(track.artist);
-    artist->setFont(Theme::bodyFont(11));
-    artist->setAttribute(Qt::WA_TransparentForMouseEvents);
-    lumen::design::StyleSheet::apply(artist, QString(
-        "color: %1; background: transparent;").arg(fgSoft));
-    infoLayout->addWidget(title);
-    infoLayout->addWidget(artist);
-    layout->addLayout(infoLayout, 1);
-    Q_UNUSED(isPlaying);
-
-    // Folder tag — clickable, navigates to the playlist
-    if (!track.folder.isEmpty()) {
-        auto *tag = new QPushButton(track.folder);
-        tag->setFont(Theme::bodyFont(10));
-        tag->setCursor(Qt::PointingHandCursor);
-        tag->setToolTip(QString(Lang::tr("Ir para a playlist \"%1\"")).arg(track.folder));
-        if (active) {
-            lumen::design::StyleSheet::apply(tag, QString(
-                "QPushButton { color: %1; background: " + Theme::hoverBg(0.15) + "; border: none; border-radius: 10px; padding: 2px 8px; }"
-                "QPushButton:hover { background: " + Theme::hoverBg(0.22) + "; }"
-            ).arg(Theme::onAccent().name()));
-        } else {
-            lumen::design::StyleSheet::apply(tag, QString(
-                "QPushButton { color: %1; background: " + Theme::accentRgba(0.10) + "; border: none; border-radius: 10px; padding: 2px 8px; }"
-                "QPushButton:hover { background: " + Theme::accentRgba(0.28) + "; color: %2; }"
-            ).arg(Theme::accentDim().name(), Theme::text().name()));
-        }
-        QString folderName = track.folder;
-        connect(tag, &QPushButton::clicked, [this, folderName]() { emit navigateTo("folder", folderName); });
-        layout->addWidget(tag);
-    }
-
-    // "+" → choose queue or playlist (not enqueue-only).
-    auto *addBtn = new QPushButton(QStringLiteral("\uE710"));
-    addBtn->setFixedSize(28, 28);
-    addBtn->setCursor(Qt::PointingHandCursor);
-    addBtn->setToolTip(Lang::tr("Adicionar à fila ou playlist"));
-    lumen::design::StyleSheet::apply(addBtn, QString(
-        "QPushButton { background: transparent; color: %1; border: none; font-size: 13px; font-family: \"Segoe MDL2 Assets\"; }"
-        "QPushButton:hover { color: %2; }"
-    ).arg(fgMuted, active ? Theme::onAccent().name() : Theme::accent().name()));
-    const int addId = track.id;
-    connect(addBtn, &QPushButton::clicked, this, [this, addId]() {
-        m_ctx->popupAddMenu({addId}, QCursor::pos());
-    });
-    layout->addWidget(addBtn);
-
-    // Like button
-    auto *likeBtn = new QPushButton(track.liked ? "\uE00B" : "\uE006");
-    likeBtn->setFixedSize(28, 28);
-    likeBtn->setCursor(Qt::PointingHandCursor);
-    lumen::design::StyleSheet::apply(likeBtn, QString(
-        "QPushButton { background: transparent; color: %1; border: none; font-size: 14px; font-family: \"Segoe MDL2 Assets\"; }"
-        "QPushButton:hover { color: %2; }"
-    ).arg(active || track.liked ? (active ? Theme::onAccent().name() : Theme::accent().name())
-                                : Theme::textMuted().name(),
-          active ? Theme::onAccent().name() : Theme::accent().name()));
-    int likeId = track.id;
-    connect(likeBtn, &QPushButton::clicked, [this, likeId]() { emit likeToggled(likeId); });
-    layout->addWidget(likeBtn);
-
-    // Edit info button
-    auto *editBtn = new QPushButton(QStringLiteral("\uE70F"));
-    editBtn->setFixedSize(28, 28);
-    editBtn->setCursor(Qt::PointingHandCursor);
-    editBtn->setFont(Theme::iconFont(11));
-    editBtn->setToolTip(Lang::tr("Editar música"));
-    lumen::design::StyleSheet::apply(editBtn, QString(
-        "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
-        "QPushButton:hover { color: %2; }"
-    ).arg(fgMuted, active ? Theme::onAccent().name() : Theme::accent().name()));
-    Track et = track;
-    connect(editBtn, &QPushButton::clicked, [this, et]() { emit editTrackRequested(et); });
-    layout->addWidget(editBtn);
-
-    // Delete button
-    auto *delBtn = new QPushButton(QStringLiteral("\uE107"));
-    delBtn->setFixedSize(28, 28);
-    delBtn->setCursor(Qt::PointingHandCursor);
-    delBtn->setFont(Theme::iconFont(11));
-    delBtn->setToolTip(Lang::tr("Excluir música"));
-    lumen::design::StyleSheet::apply(delBtn, QString(
-        "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
-        "QPushButton:hover { color: %2; }"
-    ).arg(fgMuted, Theme::danger().name()));
-    int delId = track.id;
-    connect(delBtn, &QPushButton::clicked, [this, delId]() { emit deleteRequested(delId); });
-    layout->addWidget(delBtn);
-
-    // Duration
-    auto *dur = new QLabel(Theme::formatTime(track.durationMs));
-    dur->setFont(Theme::monoFont(11));
-    dur->setFixedWidth(40);
-    dur->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    lumen::design::StyleSheet::apply(dur, QString(
-        "color: %1; background: transparent;").arg(fgMuted));
-    layout->addWidget(dur);
-
-    // Click to play via transparent overlay on the padded inner row.
-    Track t = track;
-    auto *overlay = new QPushButton(inner);
-    overlay->setGeometry(0, 0, 9999, 46);
-    lumen::design::StyleSheet::apply(overlay, QStringLiteral(
-        "QPushButton { background: transparent; border: none; }"
-        "QPushButton:hover { background: transparent; }"));
-    overlay->setCursor(Qt::PointingHandCursor);
-    overlay->lower();
-    connect(overlay, &QPushButton::clicked, [this, t]() { emit playRequested(t); });
-    // Hover over the row's main area swaps the index number for a play glyph.
-    if (!active) overlay->installEventFilter(new HoverPlayFilter(idx, idxNum, overlay));
-
-    return row;
+    m_libraryModel->reload();
+    m_libraryModel->setPlaybackState(currentTrackId, isPlaying);
 }
 
 QWidget *HomePage::createFolderChip(const Folder &folder, int trackCount, int chipWidth) {
