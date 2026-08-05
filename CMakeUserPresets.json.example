@@ -1,0 +1,12 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "local",
+      "inherits": "msvc-ninja",
+      "environment": {
+        "QTDIR": "C:/Qt/6.11.0/msvc2022_64"
+      }
+    }
+  ]
+}

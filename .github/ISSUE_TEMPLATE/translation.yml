@@ -1,0 +1,21 @@
+name: Translation
+description: Report a bad string or offer a new language
+labels: ["i18n"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Type
+      options:
+        - Missing translation (EN)
+        - Incorrect translation
+        - New language request
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Portuguese source string, current EN (if any), and suggested text
+    validations:
+      required: true

@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "Branch_v*", "feat/**", "fix/**", "chore/**"]
+  pull_request:
+    branches: [main, "Branch_v*"]
+
+jobs:
+  build-windows:
+    name: Windows MSVC
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtmultimedia
+          cache: true
+          # Prefer a version reliably published on aqt mirrors; app targets 6.11
+          # but builds cleanly on 6.8+ MSVC kits.
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          if ($env:QT_ROOT_DIR) { $env:QTDIR = $env:QT_ROOT_DIR }
+          elseif ($env:Qt6_DIR) {
+            $candidate = (Resolve-Path "$env:Qt6_DIR/../../..").Path
+            if (Test-Path "$candidate/bin/qmake.exe") { $env:QTDIR = $candidate }
+          }
+          Write-Host "QTDIR=$env:QTDIR"
+          if (-not (Test-Path "$env:QTDIR/lib/cmake/Qt6")) {
+            throw "Qt6 CMake package not found under QTDIR=$env:QTDIR"
+          }
+          cmake --preset msvc-ninja -DLUMEN_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build --preset msvc-ninja
+
+      - name: Unit tests
+        run: ctest --test-dir build/msvc-ninja --output-on-failure
+
+      - name: I18N canary
+        shell: pwsh
+        run: |
+          $exe = "build/msvc-ninja/LumenMusic.exe"
+          if (-not (Test-Path $exe)) { throw "binary missing: $exe" }
+          $qtRoot = $env:QT_ROOT_DIR
+          if (-not $qtRoot) { $qtRoot = $env:QTDIR }
+          $windeploy = Join-Path $qtRoot "bin/windeployqt.exe"
+          & $windeploy --release --no-translations --no-system-d3d-compiler $exe
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt failed" }
+          & $exe --i18n-canary
+          if ($LASTEXITCODE -ne 0) { throw "I18N canary failed" }
+
+      - name: Gate — no setStyleSheet outside design/
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path src -Recurse -Include *.cpp,*.h |
+            Where-Object { $_.FullName -notmatch '\\design\\' }
+          $hits = @()
+          foreach ($f in $files) {
+            if (Select-String -Path $f.FullName -Pattern 'setStyleSheet' -SimpleMatch -Quiet) {
+              $hits += $f.FullName
+            }
+          }
+          if ($hits.Count -gt 0) {
+            Write-Host "::error::setStyleSheet outside src/design/:"
+            $hits | ForEach-Object { Write-Host $_ }
+            throw "setStyleSheet gate failed ($($hits.Count) files)"
+          }
+          Write-Host "setStyleSheet gate clean"
+
+      - name: Gate — yt-dlp not in tree
+        shell: pwsh
+        run: |
+          if (Test-Path "src/thirdparty/yt-dlp.exe") {
+            throw "src/thirdparty/yt-dlp.exe must not be committed (P8.4)"
+          }
+          Write-Host "yt-dlp binary absent from source tree — OK"

@@ -7,8 +7,11 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QTimer>
+#include <QPair>
+#include <QList>
 #include "trackmodel.h"
 #include "playerbar.h"
+#include "playbackengine.h"
 #include "homepage.h"
 #include "addmusicpage.h"
 #include "folderspage.h"
@@ -16,6 +19,12 @@
 #include "likedpage.h"
 #include "queuepage.h"
 #include "searchpage.h"
+#include "librarypage.h"
+#include "platform/nowplaying.h"
+#include "platform/mediakeys.h"
+#include "platform/trayicon.h"
+
+#include <memory>
 
 class QLineEdit;
 class QSplitter;
@@ -25,19 +34,19 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 
-signals:
-    void themeChangeRequested();
-
 protected:
     void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void navigateTo(const QString &page, const QString &data = "");
+    void navigateBack();
     void refreshCurrentPage();
     void onTrackPlay(const Track &track);
     void showThemePicker();
     void showLanguagePicker();
+    void onDesignChanged();  // live theme / language — no restart
 
 private:
     QWidget *buildTopBar();
@@ -51,9 +60,20 @@ private:
     void confirmDeleteTrack(const Track &track);
     void showSidebarSortMenu();
     void toggleSidebarSearch();
+    void reapplyChromeStyles();
+    void setupPlatformIntegration();  // SMTC / media keys / tray (after show)
+    void showQueuePanel();
+    void hideQueuePanel();
+    void pushNowPlayingMetadata();
+    void onNowPlayingCommand(lumen::platform::TransportCommand cmd, qint64 argMs);
 
     TrackModel *m_model;
+    PlaybackEngine *m_engine = nullptr;
     PlayerBar *m_playerBar;
+    std::unique_ptr<lumen::platform::NowPlaying> m_nowPlaying;
+    lumen::platform::MediaKeys *m_mediaKeys = nullptr;
+    lumen::platform::TrayIcon  *m_tray = nullptr;
+    bool m_platformReady = false;
 
     QStackedWidget *m_stack;
     HomePage *m_homePage;
@@ -63,6 +83,7 @@ private:
     LikedPage *m_likedPage;
     QueuePage *m_queuePage = nullptr;
     SearchPage *m_searchPage;
+    LibraryPage *m_libraryPage;
     QLineEdit *m_searchEdit;
 
     // Sidebar
@@ -71,6 +92,7 @@ private:
     QPushButton *m_navHome;
     QPushButton *m_navAdd;
     QPushButton *m_navFolders;
+    QPushButton *m_navLibrary;
     QVBoxLayout *m_sidebarFoldersLayout;
     QWidget *m_sidebarFoldersContainer;
     QLabel *m_trackCountLabel;
@@ -87,9 +109,18 @@ private:
     bool m_sidebarCollapsed = false;
 
     QString m_currentPage;
+    QString m_currentPageData;
+    // Real navigation history (not a fixed "back always goes here" per page)
+    // — each entry is the (page, data) the user was actually on before the
+    // navigation that replaced it. navigateBack() pops the top and returns
+    // there, whatever it was.
+    QList<QPair<QString, QString>> m_navHistory;
+    bool m_navigatingBack = false;
 
     QLabel *m_toast = nullptr;
     QTimer *m_toastTimer = nullptr;
+    QTimer *m_resizeLayoutTimer = nullptr;
+    int m_lastLayoutWidth = 0;
 };
 
 #endif // MAINWINDOW_H

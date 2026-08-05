@@ -2,12 +2,19 @@
 #define FOLDERDETAILPAGE_H
 
 #include <QWidget>
-#include <QVBoxLayout>
 #include "trackmodel.h"
 
-class QListWidget;
-class QListWidgetItem;
+class QListView;
+class QLineEdit;
+class QLabel;
+class QPushButton;
+class TrackListModel;
+class TrackFilterProxy;
+class TrackRowDelegate;
+class TrackContextMenu;
 
+// Playlist detail with virtualized track list (P3). Header is fixed; the
+// QListView owns scrolling — never setFixedHeight(n * rowHeight).
 class FolderDetailPage : public QWidget {
     Q_OBJECT
 public:
@@ -15,9 +22,7 @@ public:
     void setFolder(const QString &folderName);
     void refresh(int currentTrackId, bool isPlaying);
 
-    // Tracks in the order currently shown (after the sort mode is applied) —
-    // used as the playback queue so next/prev follow what the user sees.
-    QList<Track> displayedTracks() const { return m_displayedTracks; }
+    QList<Track> displayedTracks() const;
 
 signals:
     void playRequested(const Track &track);
@@ -28,24 +33,40 @@ signals:
     void navigateBack();
 
 private:
+    void setupHeaderUi();
+    void updateHeader();
+    void replaceCover(QWidget *cover);
+    void applySortToModel();
+    void updateReorderFlag();
     void showEditDialog();
-    void showMoveDialog(int trackId);
     void showCoverLightbox(const QString &imagePath);
-    void applyFilter();
-    QString sortMode() const;
     void showSortMenu();
+    void showContextForSelection(const QPoint &globalPos);
+    QString sortMode() const;
+    QList<int> selectedTrackIds() const;
 
-    TrackModel *m_model;
+    TrackModel *m_model = nullptr;
     QString m_folderName;
     int m_folderId = 0;
-    QVBoxLayout *m_contentLayout;
-    QListWidget *m_trackList = nullptr;
 
-    QString m_filterText;            // in-playlist search, survives refreshes
-    QList<Track> m_displayedTracks;  // tracks in the displayed (sorted) order
-    bool m_canReorder = false;       // drag-reorder allowed (custom sort only)
-    int  m_lastCurrentId = 0;        // last refresh args, for internal reloads
+    QWidget *m_header = nullptr;
+    QWidget *m_coverHost = nullptr;
+    QLabel *m_typeLabel = nullptr;
+    QLabel *m_nameLabel = nullptr;
+    QLabel *m_statsLabel = nullptr;
+    QPushButton *m_editBtn = nullptr;
+    QPushButton *m_playBtn = nullptr;
+    QListView *m_view = nullptr;
+    TrackListModel *m_listModel = nullptr;
+    TrackFilterProxy *m_proxy = nullptr;
+    TrackRowDelegate *m_delegate = nullptr;
+    TrackContextMenu *m_ctx = nullptr;
+    QLineEdit *m_searchEdit = nullptr;
+
+    QString m_filterText;
+    int  m_lastCurrentId = 0;
     bool m_lastPlaying = false;
+    bool m_canReorder = false;
 };
 
 #endif // FOLDERDETAILPAGE_H

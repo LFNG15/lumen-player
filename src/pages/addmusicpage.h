@@ -35,6 +35,7 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     void dragLeaveEvent(QDragLeaveEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     void processFiles(const QStringList &paths);
@@ -42,6 +43,7 @@ private:
     void addAllToLibrary();
     void startDownload();
     void startPlaylistImport();
+    void applyResponsiveLayout();
 
     // User-configurable folder where YouTube downloads are saved (persisted in
     // QSettings; defaults to the system Music folder under "Lumen Music").
@@ -58,6 +60,7 @@ private:
     QWidget     *m_fileListContainer;
     QComboBox   *m_folderCombo;
     QLineEdit   *m_newFolderEdit;
+    QBoxLayout  *m_folderRow = nullptr;
     QPushButton *m_addBtn;
     QWidget     *m_folderSection;
     bool         m_isDragOver = false;
@@ -71,6 +74,7 @@ private:
     QProcess    *m_downloadProcess  = nullptr;
     QString      m_downloadPrefix;
     QString      m_lastDownloadOutput;
+    QString      m_downloadFolderFullText;
 };
 
 #endif // ADDMUSICPAGE_H

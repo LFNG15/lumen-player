@@ -1,4 +1,6 @@
 #include "importplaylistdialog.h"
+#include "database.h"
+#include "tools/ytdlp_bootstrap.h"
 #include "lang.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -18,6 +20,7 @@
 #include <QDir>
 #include <QTimer>
 #include "theme.h"
+#include "design/stylesheet.h"
 #include "mediatools.h"
 
 static const QRegularExpression kSpotifyRe(
@@ -35,7 +38,7 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
     setWindowTitle(Lang::tr("Importar Playlist"));
     setFixedSize(560, 600);
     setAttribute(Qt::WA_DeleteOnClose);
-    setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(this, QString(
         "QDialog { background: %1; }"
         "QLabel { background: transparent; color: %2; }"
         "QLineEdit { background: %3; color: %2; border: 1px solid %4; border-radius: 8px; padding: 8px 12px; }"
@@ -57,12 +60,12 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
     m_statusLabel = new QLabel(Lang::tr("Buscando informações da playlist..."));
     m_statusLabel->setFont(Theme::bodyFont(11));
     m_statusLabel->setWordWrap(true);
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     layout->addWidget(m_statusLabel);
 
     auto *nameLabel = new QLabel(Lang::tr("Nome da playlist no Lumen Music"));
     nameLabel->setFont(Theme::bodyFont(11));
-    nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     layout->addWidget(nameLabel);
 
     m_nameEdit = new QLineEdit();
@@ -83,9 +86,9 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
     m_cancelBtn->setFont(Theme::bodyFont(12));
     m_cancelBtn->setFixedHeight(36);
     m_cancelBtn->setCursor(Qt::PointingHandCursor);
-    m_cancelBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_cancelBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; padding: 0 16px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.05); }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
     connect(m_cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
     btnRow->addWidget(m_cancelBtn);
@@ -95,11 +98,11 @@ ImportPlaylistDialog::ImportPlaylistDialog(TrackModel *model, const QString &url
     m_startBtn->setFixedHeight(36);
     m_startBtn->setCursor(Qt::PointingHandCursor);
     m_startBtn->setEnabled(false);
-    m_startBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_startBtn, QString(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 18px; padding: 0 20px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
         "QPushButton:disabled { background: %4; color: %5; }"
-    ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name(),
+    ).arg(Theme::accent().name(), Theme::onAccent().name(), Theme::accentHover().name(),
           Theme::border().name(), Theme::textMuted().name()));
     connect(m_startBtn, &QPushButton::clicked, this, &ImportPlaylistDialog::startDownloads);
     btnRow->addWidget(m_startBtn);
@@ -201,7 +204,7 @@ void ImportPlaylistDialog::parseSpotifyEmbed(const QByteArray &html) {
     }
 
     if (entity.isEmpty()) {
-        showError(Lang::tr("Não foi possível ler a playlist do Spotify. Verifique se o link é público e tente novamente."));
+        showError(Lang::tr("Não foi possível ler a playlist do Spotify. Playlists privadas não podem ser importadas — torne a playlist pública e tente novamente."));
         return;
     }
 
@@ -223,22 +226,31 @@ void ImportPlaylistDialog::parseSpotifyEmbed(const QByteArray &html) {
 }
 
 void ImportPlaylistDialog::fetchYouTubePlaylist() {
-    const QString ytDlp = MediaTools::findYtDlp();
+    QString ytErr;
+    const QString ytDlp = lumen::tools::ensureYtDlp(&ytErr);
     if (ytDlp.isEmpty()) {
-        showError(Lang::tr("yt-dlp não encontrado. Verifique sua pasta de instalação."));
+        showError(ytErr.isEmpty()
+            ? Lang::tr("yt-dlp não encontrado. Verifique sua pasta de instalação.")
+            : ytErr);
         return;
     }
 
     m_proc = new QProcess(this);
     connect(m_proc, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus st) {
         QByteArray out = m_proc->readAllStandardOutput();
+        QByteArray err = m_proc->readAllStandardError();
         m_proc->deleteLater();
         m_proc = nullptr;
         if (m_cancelled) return;
 
         QJsonDocument doc = QJsonDocument::fromJson(out);
         if (exitCode != 0 || st != QProcess::NormalExit || !doc.isObject()) {
-            showError(Lang::tr("Não foi possível listar a playlist do YouTube. Verifique o link."));
+            // yt-dlp reports private/members-only playlists on stderr — surface
+            // that distinctly instead of the generic "check the link" message.
+            if (err.contains("private") || err.contains("Private"))
+                showError(Lang::tr("Esta playlist do YouTube é privada e não pode ser importada. Torne-a pública ou não listada e tente novamente."));
+            else
+                showError(Lang::tr("Não foi possível listar a playlist do YouTube. Verifique o link."));
             return;
         }
 
@@ -291,7 +303,7 @@ void ImportPlaylistDialog::onMetadataReady() {
 }
 
 void ImportPlaylistDialog::showError(const QString &message) {
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::danger().name()));
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(Theme::danger().name()));
     m_statusLabel->setText(message);
 }
 
@@ -367,7 +379,7 @@ void ImportPlaylistDialog::findNextMatch() {
         return;
     }
 
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     m_statusLabel->setText(QString(Lang::tr("Buscando correspondências no YouTube... (%1 de %2)"))
         .arg(m_matchIndex + 1).arg(m_items.size()));
     if (auto *li = m_listWidget->item(m_matchIndex)) m_listWidget->scrollToItem(li);
@@ -411,7 +423,7 @@ void ImportPlaylistDialog::findNextMatch() {
         findNextMatch();
     });
 
-    m_proc->start(MediaTools::findYtDlp(), {"-J", "--flat-playlist", query});
+    m_proc->start(lumen::tools::ensureYtDlp(), {"-J", "--flat-playlist", query});
 }
 
 void ImportPlaylistDialog::onMatchingDone() {
@@ -421,7 +433,7 @@ void ImportPlaylistDialog::onMatchingDone() {
     for (const auto &item : m_items)
         if (!item.matchUrl.isEmpty() && !item.confident) ++needReview;
 
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(
         needReview > 0 ? Theme::danger().name() : Theme::textSoft().name()));
     m_statusLabel->setText(needReview > 0
         ? QString(Lang::tr("Revise a lista: %1 música%2 em laranja podem estar erradas. Marque para aprovar e desmarque para reprovar."))
@@ -469,7 +481,7 @@ void ImportPlaylistDialog::startDownloads() {
     if (name.isEmpty()) return;
     m_playlistName = name;
 
-    if (MediaTools::findYtDlp().isEmpty()) {
+    if (lumen::tools::ensureYtDlp().isEmpty()) {
         showError(Lang::tr("yt-dlp não encontrado. Verifique sua pasta de instalação."));
         return;
     }
@@ -514,7 +526,7 @@ void ImportPlaylistDialog::downloadNext() {
 
     const int index = m_downloadQueue[m_queuePos];
     const ImportItem &item = m_items[index];
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     m_statusLabel->setText(QString(Lang::tr("Baixando %1 de %2: %3"))
         .arg(m_queuePos + 1).arg(m_downloadQueue.size()).arg(item.title));
 
@@ -525,7 +537,7 @@ void ImportPlaylistDialog::downloadNext() {
 
     // Each playlist gets its own subfolder under the downloads root, so the
     // files are easy to find afterwards.
-    const QString outDir = MediaTools::playlistDir(m_playlistName);
+    const QString outDir = Database::instance().playlistDiskPathByName(m_playlistName);
     m_downloadPrefix = QString("%1_%2").arg(QDateTime::currentMSecsSinceEpoch()).arg(index);
     const QString outTemplate = outDir + "/" + m_downloadPrefix + "_%(title)s.%(ext)s";
 
@@ -569,7 +581,7 @@ void ImportPlaylistDialog::downloadNext() {
         downloadNext();
     });
 
-    m_proc->start(MediaTools::findYtDlp(),
+    m_proc->start(lumen::tools::ensureYtDlp(),
                   MediaTools::downloadArgs(item.matchUrl, outTemplate));
 }
 
@@ -581,7 +593,7 @@ void ImportPlaylistDialog::finishImport() {
     if (!m_importedIds.isEmpty())
         m_model->reorderPlaylist(m_playlistName, m_importedIds);
 
-    m_statusLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(
+    lumen::design::StyleSheet::apply(m_statusLabel, QString("color: %1; background: transparent;").arg(
         m_okCount > 0 ? Theme::accent().name() : Theme::danger().name()));
     m_statusLabel->setText(QString(Lang::tr("Concluído! %1 de %2 música%3 importada%3 para \"%4\"."))
         .arg(m_okCount).arg(m_downloadQueue.size())

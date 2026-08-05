@@ -5,6 +5,11 @@
 #include <QVBoxLayout>
 #include <QScrollArea>
 #include "trackmodel.h"
+#include "models/tracklistmodel.h"
+
+class TrackContextMenu;
+class QListView;
+class QLabel;
 
 class HomePage : public QWidget {
     Q_OBJECT
@@ -20,15 +25,44 @@ signals:
     void deleteRequested(int id);
     void navigateTo(const QString &page, const QString &data = "");
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
-    QWidget *createTrackRow(const Track &track, int index, int currentId, bool isPlaying);
-    QWidget *createFolderChip(const Folder &folder, int trackCount);
+    // A non-scrolling "shelf": QListView+TrackListModel+TrackRowDelegate,
+    // wired identically to how LikedPage/FolderDetailPage/SearchPage do it,
+    // capped to `limit` items with height following content (mouse-only,
+    // no keyboard focus — see homepage.cpp).
+    QWidget *buildShelf(const QString &labelText, TrackListModel::Source::Kind kind,
+                        int limit, QListView **outView, TrackListModel **outModel);
+    void updateShelfHeight(QListView *view, TrackListModel *model);
+    QList<int> selectedIds(QListView *view, TrackListModel *model) const;
+
+    QWidget *createFolderChip(const Folder &folder, int trackCount, int chipWidth);
     QWidget *createChipCover(const Folder &folder);
     QWidget *createRecentCard(const Folder &folder);
+    int chipColumnsForWidth(int w) const;
 
     TrackModel *m_model;
-    QVBoxLayout *m_contentLayout;
-    QScrollArea *m_scroll;
+    TrackContextMenu *m_ctx = nullptr;
+
+    // Greeting/chips/"Recentes" strip (dynamic, rebuilt each refresh())
+    // followed by the two capped shelves (persistent, just reload()).
+    QScrollArea *m_scroll = nullptr;
+    QWidget *m_dynamicRegion = nullptr;
+    QVBoxLayout *m_dynamicLayout = nullptr;
+
+    QWidget *m_playedSection = nullptr;
+    QListView *m_playedView = nullptr;
+    TrackListModel *m_playedModel = nullptr;
+
+    QWidget *m_addedSection = nullptr;
+    QListView *m_addedView = nullptr;
+    TrackListModel *m_addedModel = nullptr;
+
+    int m_lastChipCols = -1;
+    int m_lastCurrentId = 0;
+    bool m_lastPlaying = false;
 };
 
 #endif // HOMEPAGE_H

@@ -1,142 +1,201 @@
 #include "trackmodel.h"
 #include "database.h"
 #include "mediatools.h"
+#include "position_gap.h"
 #include <QRandomGenerator>
+#include <QPair>
 #include <algorithm>
 
-TrackModel::TrackModel(QObject *parent) : QObject(parent) {
+TrackModel::TrackModel(QObject *parent) : QObject(parent)
+{
     Database::instance().open();
+    reload();
+}
+
+void TrackModel::rebuildIndexes()
+{
+    m_idIndex.clear();
+    m_idIndex.reserve(m_tracks.size());
+    for (int i = 0; i < m_tracks.size(); ++i)
+        m_idIndex.insert(m_tracks[i].id, i);
+}
+
+void TrackModel::invalidatePlaylistCache() const
+{
+    m_playlistCacheValid = false;
+    m_membershipValid = false;
+    m_playlistCache.clear();
+    m_membership.clear();
+    m_memberedTrackIds.clear();
+}
+
+void TrackModel::ensurePlaylistCache() const
+{
+    if (m_playlistCacheValid) return;
+    m_playlistCache = Database::instance().allPlaylists();
+    m_playlistCacheValid = true;
+}
+
+void TrackModel::ensureMembershipCache() const
+{
+    if (m_membershipValid) return;
+    ensurePlaylistCache();
+    m_membership.clear();
+    m_memberedTrackIds.clear();
+    for (const auto &f : m_playlistCache) {
+        QVector<int> ids;
+        const auto tracks = Database::instance().tracksInPlaylist(f.id);
+        ids.reserve(tracks.size());
+        for (const auto &t : tracks) {
+            ids.append(t.id);
+            m_memberedTrackIds.insert(t.id);
+        }
+        m_membership.insert(f.id, ids);
+    }
+    m_membershipValid = true;
+}
+
+void TrackModel::reload()
+{
     m_tracks = Database::instance().allTracks();
+    rebuildIndexes();
+    invalidatePlaylistCache();
 }
 
 QList<Track> &TrackModel::tracks() { return m_tracks; }
 const QList<Track> &TrackModel::tracks() const { return m_tracks; }
 
-int TrackModel::addTrack(const Track &track) {
-    int folderId = 0;
+int TrackModel::addTrack(const Track &track)
+{
+    int playlistId = 0;
     if (!track.folder.isEmpty()) {
-        folderId = Database::instance().findOrCreateFolder(
+        playlistId = Database::instance().findOrCreatePlaylist(
             track.folder, track.cover.c1, track.cover.c2);
-        // Keep a matching folder on disk under the downloads root so the
-        // playlist's files are easy to locate.
-        MediaTools::playlistDir(track.folder);
+        Database::instance().playlistDiskPath(playlistId);
     }
 
-    int newId = Database::instance().insertTrack(track, folderId);
-
-    Track t    = track;
-    t.id       = newId;
-    t.folderId = folderId;
-    m_tracks.prepend(t);
+    const int newId = Database::instance().insertTrack(track, playlistId);
+    reload();
     emit tracksChanged();
     return newId;
 }
 
-void TrackModel::removeTrack(int id) {
+void TrackModel::removeTrack(int id)
+{
     Database::instance().deleteTrack(id);
-    m_tracks.erase(std::remove_if(m_tracks.begin(), m_tracks.end(),
-        [id](const Track &t) { return t.id == id; }), m_tracks.end());
+    const int idx = m_idIndex.value(id, -1);
+    if (idx >= 0)
+        m_tracks.removeAt(idx);
+    rebuildIndexes();
+    invalidatePlaylistCache();
     emit tracksChanged();
 }
 
-void TrackModel::updateTrack(int id, const QString &title, const QString &artist) {
-    QString finalArtist = artist.isEmpty() ? QStringLiteral("Desconhecido") : artist;
+void TrackModel::updateTrack(int id, const QString &title, const QString &artist)
+{
+    const QString finalArtist = artist.isEmpty() ? QStringLiteral("Desconhecido") : artist;
     Database::instance().updateTrack(id, title, finalArtist);
-    for (auto &t : m_tracks) {
-        if (t.id == id) {
-            t.title  = title;
-            t.artist = finalArtist;
-            break;
-        }
+    if (Track *t = findTrack(id)) {
+        t->title  = title;
+        t->artist = finalArtist;
     }
     emit tracksChanged();
 }
 
-void TrackModel::toggleLike(int id) {
-    for (auto &t : m_tracks) {
-        if (t.id == id) {
-            t.liked = !t.liked;
-            Database::instance().setLiked(id, t.liked);
-            emit tracksChanged();
-            return;
-        }
+void TrackModel::toggleLike(int id)
+{
+    if (Track *t = findTrack(id)) {
+        t->liked = !t->liked;
+        t->likedAt = t->liked ? QDateTime::currentMSecsSinceEpoch() : 0;
+        Database::instance().setLiked(id, t->liked);
+        emit tracksChanged();
     }
 }
 
-void TrackModel::markPlayed(int id) {
+void TrackModel::markPlayed(int id)
+{
     Database::instance().markPlayed(id);
-    qint64 now = QDateTime::currentMSecsSinceEpoch();
-    for (auto &t : m_tracks) {
-        if (t.id == id) {
-            t.lastPlayedAt = now;
-            t.playCount++;
-            break;
-        }
+    if (Track *t = findTrack(id)) {
+        t->lastPlayedAt = QDateTime::currentMSecsSinceEpoch();
+        t->playCount++;
     }
-    emit tracksChanged();
+    // Don't emit tracksChanged on every play — too noisy for UI rebuilds.
 }
 
-void TrackModel::setDuration(int id, qint64 ms) {
-    for (auto &t : m_tracks) {
-        if (t.id == id) {
-            t.durationMs = ms;
-            Database::instance().setDuration(id, ms);
-            return;
-        }
+void TrackModel::setDuration(int id, qint64 ms)
+{
+    if (Track *t = findTrack(id)) {
+        t->durationMs = ms;
+        Database::instance().setDuration(id, ms);
     }
 }
 
-Track *TrackModel::findTrack(int id) {
-    for (auto &t : m_tracks) {
-        if (t.id == id) return &t;
+Track *TrackModel::findTrack(int id)
+{
+    const int idx = m_idIndex.value(id, -1);
+    if (idx < 0 || idx >= m_tracks.size()) return nullptr;
+    return &m_tracks[idx];
+}
+
+QList<Folder> TrackModel::folders() const
+{
+    ensurePlaylistCache();
+    return m_playlistCache;
+}
+
+QList<Track> TrackModel::tracksInFolder(const QString &folderName) const
+{
+    // Resolve id from cache, then load ordered ids → resolve tracks via index.
+    ensurePlaylistCache();
+    int playlistId = 0;
+    for (const auto &f : m_playlistCache) {
+        if (f.name == folderName) { playlistId = f.id; break; }
     }
-    return nullptr;
+    if (playlistId <= 0)
+        return Database::instance().tracksInPlaylistByName(folderName);
+
+    // Prefer membership cache when warm; fall back to DB (keeps positions).
+    // Positions live in playlist_tracks — still query DB for correct order +
+    // full Track fields with position. Cache only avoids repeated folders().
+    return Database::instance().tracksInPlaylist(playlistId);
 }
 
-QList<Folder> TrackModel::folders() const {
-    return Database::instance().allFolders();
-}
-
-QList<Track> TrackModel::tracksInFolder(const QString &folderName) const {
+QList<Track> TrackModel::standaloneTracks() const
+{
+    ensureMembershipCache();
     QList<Track> result;
-    for (auto &t : m_tracks) {
-        if (t.folder == folderName) result.append(t);
+    result.reserve(m_tracks.size() / 4);
+    for (const auto &t : m_tracks) {
+        if (!m_memberedTrackIds.contains(t.id))
+            result.append(t);
     }
-    // Honour the playlist's custom order. Tracks added in the same batch can
-    // share the same timestamp position, so break ties by id — otherwise the
-    // unstable sort reshuffles them on every refresh.
+    return result;
+}
+
+QList<Track> TrackModel::likedTracks() const
+{
+    QList<Track> result;
+    for (const auto &t : m_tracks) {
+        if (t.liked) result.append(t);
+    }
     std::sort(result.begin(), result.end(),
         [](const Track &a, const Track &b) {
-            return a.position != b.position ? a.position < b.position
-                                            : a.id < b.id;
+            return a.likedAt != b.likedAt ? a.likedAt > b.likedAt
+                                          : a.id > b.id;
         });
     return result;
 }
 
-QList<Track> TrackModel::standaloneTracks() const {
-    QList<Track> result;
-    for (auto &t : m_tracks) {
-        if (t.folderId == 0 && t.folder.isEmpty()) result.append(t);
-    }
-    return result;
-}
-
-QList<Track> TrackModel::likedTracks() const {
-    QList<Track> result;
-    for (auto &t : m_tracks) {
-        if (t.liked) result.append(t);
-    }
-    return result;
-}
-
-QList<Track> TrackModel::recentTracks(int count) const {
+QList<Track> TrackModel::recentTracks(int count) const
+{
     QList<Track> sorted = m_tracks;
     std::sort(sorted.begin(), sorted.end(),
         [](const Track &a, const Track &b) { return a.addedAt > b.addedAt; });
     return sorted.mid(0, count);
 }
 
-QList<Track> TrackModel::recentlyPlayed(int count) const {
+QList<Track> TrackModel::recentlyPlayed(int count) const
+{
     QList<Track> played;
     for (const auto &t : m_tracks)
         if (t.lastPlayedAt > 0) played.append(t);
@@ -145,12 +204,17 @@ QList<Track> TrackModel::recentlyPlayed(int count) const {
     return played.mid(0, count);
 }
 
-QList<Folder> TrackModel::recentlyPlayedFolders(int count) const {
+QList<Folder> TrackModel::recentlyPlayedFolders(int count) const
+{
+    ensureMembershipCache();
     QList<QPair<qint64, Folder>> played;
-    for (const auto &f : folders()) {
+    for (const auto &f : m_playlistCache) {
         qint64 last = 0;
-        for (const auto &t : m_tracks)
-            if (t.folderId == f.id && t.lastPlayedAt > last) last = t.lastPlayedAt;
+        const auto ids = m_membership.value(f.id);
+        for (int id : ids) {
+            if (const Track *t = const_cast<TrackModel *>(this)->findTrack(id))
+                if (t->lastPlayedAt > last) last = t->lastPlayedAt;
+        }
         if (last > 0) played.append({last, f});
     }
     std::sort(played.begin(), played.end(),
@@ -158,79 +222,118 @@ QList<Folder> TrackModel::recentlyPlayedFolders(int count) const {
             return a.first > b.first;
         });
     QList<Folder> result;
-    for (int i = 0; i < played.size() && i < count; ++i) result.append(played[i].second);
+    for (int i = 0; i < played.size() && i < count; ++i)
+        result.append(played[i].second);
     return result;
 }
 
 int TrackModel::createPlaylist(const QString &name, const QColor &c1, const QColor &c2,
-                               const QString &coverImage) {
-    QString stored = Database::importCoverImage(coverImage);
-    int id = Database::instance().createFolder(name, c1, c2, stored);
-    // Every playlist gets a matching folder under the downloads root.
-    MediaTools::playlistDir(name);
+                               const QString &coverImage)
+{
+    const QString stored = Database::importCoverImage(coverImage);
+    const int id = Database::instance().createPlaylist(name, c1, c2, stored);
+    if (id > 0)
+        Database::instance().playlistDiskPath(id);
+    invalidatePlaylistCache();
     emit tracksChanged();
     return id;
 }
 
-void TrackModel::renamePlaylist(int id, const QString &newName) {
-    Database::instance().renameFolder(id, newName);
+void TrackModel::renamePlaylist(int id, const QString &newName)
+{
+    Database::instance().renamePlaylist(id, newName);
     for (auto &t : m_tracks) {
-        if (t.folderId == id) t.folder = newName;
+        if (t.ownerPlaylistId == id || t.folderId == id)
+            t.folder = newName;
     }
+    invalidatePlaylistCache();
     emit tracksChanged();
 }
 
-void TrackModel::updatePlaylistCover(int id, const QColor &c1, const QColor &c2) {
-    Database::instance().updateFolderCover(id, c1, c2);
+void TrackModel::updatePlaylistCover(int id, const QColor &c1, const QColor &c2)
+{
+    Database::instance().updatePlaylistCover(id, c1, c2);
+    invalidatePlaylistCache();
     emit tracksChanged();
 }
 
-void TrackModel::updatePlaylistCoverImage(int id, const QString &sourcePath) {
-    // Empty path clears the image and reverts to the gradient cover.
-    QString stored = Database::importCoverImage(sourcePath);
-    Database::instance().updateFolderCoverImage(id, stored);
+void TrackModel::updatePlaylistCoverImage(int id, const QString &sourcePath)
+{
+    const QString stored = Database::importCoverImage(sourcePath);
+    Database::instance().updatePlaylistCoverImage(id, stored);
+    invalidatePlaylistCache();
     emit tracksChanged();
 }
 
-void TrackModel::deletePlaylist(int id) {
-    Database::instance().deleteFolder(id);
-    for (auto &t : m_tracks) {
-        if (t.folderId == id) {
-            t.folderId = 0;
-            t.folder   = "";
-        }
+void TrackModel::deletePlaylist(int id)
+{
+    Database::instance().deletePlaylist(id);
+    reload();
+    emit tracksChanged();
+}
+
+AddToPlaylistResult TrackModel::addTrackToPlaylist(int trackId, int playlistId)
+{
+    const AddToPlaylistResult r =
+        Database::instance().addTrackToPlaylist(trackId, playlistId);
+    if (r.status == AddToPlaylistResult::Added) {
+        reload();
+        emit tracksChanged();
+        if (r.crossesOwner || r.firstOwner)
+            emit ownerNotice(r);
     }
-    emit tracksChanged();
+    return r;
 }
 
-void TrackModel::moveTrackToPlaylist(int trackId, int playlistId, const QString &playlistName) {
-    Database::instance().moveTrackToFolder(trackId, playlistId);
-    for (auto &t : m_tracks) {
-        if (t.id == trackId) {
-            t.folderId = playlistId;
-            t.folder   = playlistName;
-        }
+bool TrackModel::removeTrackFromPlaylist(int trackId, int playlistId)
+{
+    if (!Database::instance().removeTrackFromPlaylist(trackId, playlistId))
+        return false;
+    reload();
+    emit tracksChanged();
+    return true;
+}
+
+QList<int> TrackModel::playlistIdsForTrack(int trackId) const
+{
+    ensureMembershipCache();
+    QList<int> ids;
+    for (auto it = m_membership.constBegin(); it != m_membership.constEnd(); ++it) {
+        if (it.value().contains(trackId))
+            ids.append(it.key());
     }
+    if (ids.isEmpty())
+        return Database::instance().playlistIdsForTrack(trackId);
+    return ids;
+}
+
+void TrackModel::reorderPlaylist(const QString &folderName,
+                                 const QList<int> &orderedTrackIds)
+{
+    const Folder f = Database::instance().playlistByName(folderName);
+    if (f.id > 0)
+        reorderPlaylist(f.id, orderedTrackIds);
+}
+
+void TrackModel::reorderPlaylist(int playlistId, const QList<int> &orderedTrackIds)
+{
+    if (playlistId <= 0) return;
+
+    Database::instance().setPlaylistTrackPositions(
+        playlistId, lumen::position::renormalise(orderedTrackIds));
+    invalidatePlaylistCache();
     emit tracksChanged();
 }
 
-void TrackModel::reorderPlaylist(const QString &folderName, const QList<int> &orderedTrackIds) {
-    Q_UNUSED(folderName);
-    for (int i = 0; i < orderedTrackIds.size(); ++i) {
-        Database::instance().setTrackPosition(orderedTrackIds[i], i);
-        for (auto &t : m_tracks)
-            if (t.id == orderedTrackIds[i]) { t.position = i; break; }
-    }
-    emit tracksChanged();
-}
-
-int TrackModel::nextIndex(int currentIndex, bool shuffle) const {
+int TrackModel::nextIndex(int currentIndex, bool shuffle) const
+{
     if (m_tracks.isEmpty()) return -1;
     if (shuffle) return QRandomGenerator::global()->bounded(m_tracks.size());
     return (currentIndex + 1) % m_tracks.size();
 }
 
-int TrackModel::prevIndex(int currentIndex) const {
+int TrackModel::prevIndex(int currentIndex) const
+{
     if (m_tracks.isEmpty()) return -1;
     return (currentIndex - 1 + m_tracks.size()) % m_tracks.size();
 }

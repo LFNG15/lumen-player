@@ -2,25 +2,42 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "CMake: configure (debug)",
+            "label": "CMake: configure (msvc-ninja)",
             "type": "shell",
-            "command": "D:/Qt/Tools/CMake_64/bin/cmake.exe",
-            "args": ["--preset", "debug"],
+            "command": "cmake",
+            "args": ["--preset", "msvc-ninja"],
             "options": { "cwd": "${workspaceFolder}" },
-            "problemMatcher": []
+            "problemMatcher": ["$msCompile"]
         },
         {
-            "label": "CMake: build (debug)",
+            "label": "CMake: build (msvc-ninja)",
             "type": "shell",
-            "command": "D:/Qt/Tools/CMake_64/bin/cmake.exe",
-            "args": ["--build", "--preset", "debug"],
+            "command": "cmake",
+            "args": ["--build", "--preset", "msvc-ninja"],
             "options": { "cwd": "${workspaceFolder}" },
-            "problemMatcher": ["$gcc"],
-            "dependsOn": "CMake: configure (debug)",
+            "problemMatcher": ["$msCompile"],
+            "dependsOn": "CMake: configure (msvc-ninja)",
             "group": {
                 "kind": "build",
                 "isDefault": true
             }
+        },
+        {
+            "label": "CMake: configure (debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--preset", "msvc-ninja-debug"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$msCompile"]
+        },
+        {
+            "label": "CMake: build (debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "--preset", "msvc-ninja-debug"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$msCompile"],
+            "dependsOn": "CMake: configure (debug)"
         }
     ]
 }

@@ -1,252 +1,216 @@
 #include "likedpage.h"
 #include "lang.h"
+#include "theme.h"
+#include "design/stylesheet.h"
+#include "design/icons.h"
+#include "models/tracklistmodel.h"
+#include "models/trackrowdelegate.h"
+#include "models/trackcontextmenu.h"
+
 #include <QLabel>
 #include <QPushButton>
 #include <QHBoxLayout>
-#include <QScrollArea>
-#include <QFrame>
-#include "hoverplayfilter.h"
+#include <QVBoxLayout>
+#include <QListView>
+#include <QShortcut>
+#include <QCursor>
+
+namespace Icons = lumen::design::Icons;
 
 LikedPage::LikedPage(TrackModel *model, QWidget *parent)
-    : QWidget(parent), m_model(model)
+    : QWidget(parent)
+    , m_model(model)
 {
-    auto *outerLayout = new QVBoxLayout(this);
-    outerLayout->setContentsMargins(0, 0, 0, 0);
+    auto *root = new QVBoxLayout(this);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
 
-    auto *scroll = new QScrollArea(this);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+    m_header = new QWidget(this);
+    lumen::design::StyleSheet::apply(m_header, QStringLiteral("background: transparent;"));
+    root->addWidget(m_header);
 
-    auto *content = new QWidget();
-    content->setStyleSheet("background: transparent;");
-    m_contentLayout = new QVBoxLayout(content);
-    m_contentLayout->setContentsMargins(32, 28, 32, 28);
-    m_contentLayout->setSpacing(8);
+    m_listModel = new TrackListModel(m_model, this);
+    TrackListModel::Source src;
+    src.kind = TrackListModel::Source::Liked;
+    m_listModel->setSource(src);
+    m_listModel->setReorderEnabled(false);
 
-    scroll->setWidget(content);
-    outerLayout->addWidget(scroll);
+    m_view = new QListView(this);
+    m_view->setModel(m_listModel);
+    m_view->setUniformItemSizes(true);
+    m_view->setLayoutMode(QListView::Batched);
+    m_view->setResizeMode(QListView::Adjust);
+    m_view->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_view->setMouseTracking(true);
+    m_view->setFrameShape(QFrame::NoFrame);
+    m_view->setSpacing(2);
+    m_view->setContextMenuPolicy(Qt::CustomContextMenu);
+    lumen::design::StyleSheet::apply(m_view, QStringLiteral(
+        "QListView { background: transparent; border: none; outline: none; }"));
+
+    m_delegate = new TrackRowDelegate(m_view);
+    m_view->setItemDelegate(m_delegate);
+    m_ctx = new TrackContextMenu(m_model, this);
+
+    connect(m_delegate, &TrackRowDelegate::playClicked, this, [this](const QModelIndex &idx) {
+        const int id = m_listModel->trackIdAt(idx.row());
+        if (Track *t = m_model->findTrack(id)) emit playRequested(*t);
+    });
+    connect(m_delegate, &TrackRowDelegate::likeClicked, this, [this](const QModelIndex &idx) {
+        const int id = m_listModel->trackIdAt(idx.row());
+        if (id > 0) emit likeToggled(id);
+    });
+    connect(m_delegate, &TrackRowDelegate::moreClicked, this,
+            [this](const QModelIndex &idx, const QPoint &gp) {
+        QList<int> ids = selectedIds();
+        if (ids.isEmpty()) {
+            const int id = m_listModel->trackIdAt(idx.row());
+            if (id > 0) ids.append(id);
+        }
+        if (!ids.isEmpty())
+            m_ctx->popupAddMenu(ids, gp);
+    });
+    connect(m_view, &QListView::customContextMenuRequested, this, [this](const QPoint &pos) {
+        showContext(m_view->viewport()->mapToGlobal(pos));
+    });
+
+    connect(m_ctx, &TrackContextMenu::playRequested, this, &LikedPage::playRequested);
+    connect(m_ctx, &TrackContextMenu::enqueueRequested, this, &LikedPage::enqueueRequested);
+    connect(m_ctx, &TrackContextMenu::editRequested, this, &LikedPage::editTrackRequested);
+    connect(m_ctx, &TrackContextMenu::deleteRequested, this, &LikedPage::deleteRequested);
+    connect(m_ctx, &TrackContextMenu::likeToggled, this, &LikedPage::likeToggled);
+
+    auto *space = new QShortcut(Qt::Key_Space, m_view);
+    connect(space, &QShortcut::activated, this, [this]() {
+        auto ids = selectedIds();
+        if (!ids.isEmpty())
+            if (Track *t = m_model->findTrack(ids.first()))
+                emit playRequested(*t);
+    });
+
+    root->addWidget(m_view, 1);
 }
 
-void LikedPage::refresh(int currentTrackId, bool isPlaying) {
-    QLayoutItem *item;
-    while ((item = m_contentLayout->takeAt(0)) != nullptr) {
-        if (item->widget()) item->widget()->deleteLater();
-        delete item;
+QList<int> LikedPage::selectedIds() const
+{
+    QList<int> ids;
+    for (const QModelIndex &idx : m_view->selectionModel()->selectedRows()) {
+        const int id = m_listModel->trackIdAt(idx.row());
+        if (id > 0) ids.append(id);
     }
+    if (ids.isEmpty() && m_view->currentIndex().isValid()) {
+        const int id = m_listModel->trackIdAt(m_view->currentIndex().row());
+        if (id > 0) ids.append(id);
+    }
+    return ids;
+}
 
-    // Back button
-    auto *backBtn = new QPushButton("\uE0A6");
+void LikedPage::showContext(const QPoint &globalPos)
+{
+    auto ids = selectedIds();
+    if (!ids.isEmpty())
+        m_ctx->popup(ids, globalPos);
+}
+
+static void clearLayoutTreeLiked(QLayout *layout)
+{
+    if (!layout) return;
+    while (QLayoutItem *it = layout->takeAt(0)) {
+        if (QWidget *w = it->widget()) {
+            w->hide();
+            delete w;
+        } else if (QLayout *sub = it->layout()) {
+            clearLayoutTreeLiked(sub);
+        }
+        delete it;
+    }
+}
+
+void LikedPage::rebuildHeader()
+{
+    // Same nested-layout orphan bug as FolderDetailPage (playlist switch overlay).
+    if (QLayout *old = m_header->layout()) {
+        clearLayoutTreeLiked(old);
+        delete old;
+    }
+    const auto kids = m_header->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget *w : kids)
+        delete w;
+
+    auto *lay = new QVBoxLayout(m_header);
+    lay->setContentsMargins(32, 28, 32, 12);
+    lay->setSpacing(12);
+
+    auto *backBtn = new QPushButton(Icons::back(), m_header);
     backBtn->setFixedSize(34, 34);
     backBtn->setCursor(Qt::PointingHandCursor);
     backBtn->setFont(Theme::iconFont(12));
-    backBtn->setStyleSheet(QString(
-        "QPushButton { background: rgba(255,255,255,0.05); color: %1; border: none; border-radius: 17px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.1); }"
+    lumen::design::StyleSheet::apply(backBtn, QString(
+        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.1) + "; }"
     ).arg(Theme::text().name()));
     connect(backBtn, &QPushButton::clicked, this, &LikedPage::navigateBack);
-    m_contentLayout->addWidget(backBtn, 0, Qt::AlignLeft);
+    lay->addWidget(backBtn, 0, Qt::AlignLeft);
 
-    auto liked = m_model->likedTracks();
-
-    // Header
-    auto *headerLayout = new QHBoxLayout();
-    headerLayout->setSpacing(20);
+    auto *row = new QHBoxLayout();
+    row->setSpacing(20);
 
     auto *cover = new QWidget();
     cover->setFixedSize(140, 140);
-    cover->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(cover, QString(
         "background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 10px;"
     ).arg(Theme::accent().name(), Theme::danger().name()));
-    auto *heartLabel = new QLabel("\uE00B", cover);
-    heartLabel->setFont(Theme::iconFont(36));
-    heartLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
-    heartLabel->setAlignment(Qt::AlignCenter);
-    heartLabel->setGeometry(0, 0, 140, 140);
-    headerLayout->addWidget(cover);
+    auto *heart = new QLabel(Icons::heart(), cover);
+    heart->setFont(Theme::iconFont(36));
+    lumen::design::StyleSheet::apply(heart, QString(
+        "color: %1; background: transparent;").arg(Theme::text().name()));
+    heart->setAlignment(Qt::AlignCenter);
+    heart->setGeometry(0, 0, 140, 140);
+    row->addWidget(cover);
 
-    auto *infoLayout = new QVBoxLayout();
-    infoLayout->addStretch();
+    auto *info = new QVBoxLayout();
+    info->addStretch();
+    auto *type = new QLabel(Lang::tr("COLEÇÃO"));
+    type->setFont(Theme::bodyFont(10));
+    lumen::design::StyleSheet::apply(type, QString(
+        "color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;"
+    ).arg(Theme::textMuted().name()));
+    info->addWidget(type);
 
-    auto *typeLabel = new QLabel(Lang::tr("COLEÇÃO"));
-    typeLabel->setFont(Theme::bodyFont(10));
-    typeLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;").arg(Theme::textMuted().name()));
-    infoLayout->addWidget(typeLabel);
+    auto *name = new QLabel(Lang::tr("Curtidas"));
+    name->setFont(Theme::titleFont(32));
+    lumen::design::StyleSheet::apply(name, QString(
+        "color: %1; background: transparent;").arg(Theme::text().name()));
+    info->addWidget(name);
 
-    auto *nameLabel = new QLabel(Lang::tr("Curtidas"));
-    nameLabel->setFont(Theme::titleFont(32));
-    nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
-    infoLayout->addWidget(nameLabel);
+    const int n = m_listModel->rowCount();
+    auto *stats = new QLabel(QString(Lang::tr("%1 faixa%2"))
+        .arg(n).arg(n != 1 ? "s" : ""));
+    stats->setFont(Theme::bodyFont(12));
+    lumen::design::StyleSheet::apply(stats, QString(
+        "color: %1; background: transparent;").arg(Theme::textSoft().name()));
+    info->addWidget(stats);
+    info->addStretch();
+    row->addLayout(info, 1);
+    lay->addLayout(row);
 
-    auto *countLabel = new QLabel(QString(Lang::tr("%1 faixa%2"))
-        .arg(liked.size()).arg(liked.size() != 1 ? "s" : ""));
-    countLabel->setFont(Theme::bodyFont(12));
-    countLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
-    infoLayout->addWidget(countLabel);
-    infoLayout->addStretch();
-
-    headerLayout->addLayout(infoLayout, 1);
-
-    auto *headerWidget = new QWidget();
-    headerWidget->setLayout(headerLayout);
-    headerWidget->setStyleSheet("background: transparent;");
-    m_contentLayout->addWidget(headerWidget);
-    m_contentLayout->addSpacing(16);
-
-    if (liked.isEmpty()) {
-        auto *emptyLabel = new QLabel(Lang::tr("Nenhuma música curtida ainda"));
-        emptyLabel->setFont(Theme::bodyFont(14));
-        emptyLabel->setStyleSheet(QString("color: %1; background: transparent; padding-top: 20px;").arg(Theme::textMuted().name()));
-        emptyLabel->setAlignment(Qt::AlignCenter);
-        m_contentLayout->addWidget(emptyLabel);
-        m_contentLayout->addStretch();
-        return;
-    }
-
-    // Play the whole liked collection (it behaves as its own playlist).
-    auto *playBtn = new QPushButton(QStringLiteral("\uE102"));
-    playBtn->setFixedSize(48, 48);
+    auto *playBtn = new QPushButton(QStringLiteral("  %1  %2")
+        .arg(Icons::play(), Lang::tr("Tocar curtidas")));
+    playBtn->setObjectName(QStringLiteral("lumenAccentBtn"));
     playBtn->setCursor(Qt::PointingHandCursor);
-    playBtn->setFont(Theme::iconFont(16));
-    playBtn->setToolTip(Lang::tr("Tocar curtidas"));
-    playBtn->setStyleSheet(QString(
-        "QPushButton { background: %1; color: %2; border: none; border-radius: 24px; font-family: \"Segoe MDL2 Assets\"; font-size: 16px; }"
-        "QPushButton:hover { background: %3; }"
-    ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
-    Track firstLiked = liked.first();
-    connect(playBtn, &QPushButton::clicked, [this, firstLiked]() { emit playRequested(firstLiked); });
-    m_contentLayout->addWidget(playBtn, 0, Qt::AlignLeft);
-    m_contentLayout->addSpacing(8);
+    playBtn->setFixedHeight(40);
+    connect(playBtn, &QPushButton::clicked, this, [this]() {
+        const auto tracks = m_listModel->tracksInOrder();
+        if (!tracks.isEmpty())
+            emit playRequested(tracks.first());
+    });
+    lay->addWidget(playBtn, 0, Qt::AlignLeft);
+}
 
-    // Track list
-    for (int i = 0; i < liked.size(); ++i) {
-        auto &track = liked[i];
-        bool active = (track.id == currentTrackId);
-
-        auto *row = new QWidget();
-        row->setFixedHeight(52);
-        row->setCursor(Qt::PointingHandCursor);
-        row->setObjectName("trackRow");
-        row->setStyleSheet(QString(
-            "QWidget#trackRow { background: %1; border-radius: 8px; border-left: 3px solid %2; }"
-        ).arg(active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"),
-              active ? Theme::accent().name() : "transparent"));
-
-        auto *layout = new QHBoxLayout(row);
-        layout->setContentsMargins(12, 4, 12, 4);
-        layout->setSpacing(12);
-
-        QString idxNum = QString("%1").arg(i + 1, 2, 10, QChar('0'));
-        auto *idx = new QLabel(active ? QStringLiteral("\uE102") : idxNum);
-        idx->setFont(Theme::monoFont(12));
-        idx->setFixedWidth(28);
-        idx->setAlignment(Qt::AlignCenter);
-        idx->setStyleSheet(QString("color: %1; background: transparent; font-family: \"Segoe MDL2 Assets\", Consolas;").arg(
-            active ? Theme::accent().name() : Theme::textMuted().name()));
-        idx->setAttribute(Qt::WA_TransparentForMouseEvents);  // let clicks reach the play overlay
-        layout->addWidget(idx);
-
-        auto *swatch = new QWidget();
-        swatch->setFixedSize(38, 38);
-        swatch->setAttribute(Qt::WA_TransparentForMouseEvents);
-        swatch->setStyleSheet(QString("background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: 6px;")
-            .arg(track.cover.c1.name(), track.cover.c2.name()));
-        layout->addWidget(swatch);
-
-        auto *infoCol = new QVBoxLayout();
-        infoCol->setSpacing(1);
-        auto *titleLabel = new QLabel(track.title);
-        titleLabel->setFont(Theme::bodyFont(13));
-        titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-        titleLabel->setStyleSheet(QString("color: %1; background: transparent; font-weight: 600;").arg(
-            active ? Theme::accent().name() : Theme::text().name()));
-        auto *artistLabel = new QLabel(track.artist);
-        artistLabel->setFont(Theme::bodyFont(11));
-        artistLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-        artistLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
-        infoCol->addWidget(titleLabel);
-        infoCol->addWidget(artistLabel);
-        layout->addLayout(infoCol, 1);
-
-        if (!track.folder.isEmpty()) {
-            auto *tag = new QPushButton(track.folder);
-            tag->setFont(Theme::bodyFont(10));
-            tag->setCursor(Qt::PointingHandCursor);
-            tag->setToolTip(QString(Lang::tr("Ir para a playlist \"%1\"")).arg(track.folder));
-            tag->setStyleSheet(QString(
-                "QPushButton { color: %1; background: " + Theme::accentRgba(0.10) + "; border: none; border-radius: 10px; padding: 2px 8px; }"
-                "QPushButton:hover { background: " + Theme::accentRgba(0.28) + "; color: %2; }"
-            ).arg(Theme::accentDim().name(), Theme::text().name()));
-            QString folderName = track.folder;
-            connect(tag, &QPushButton::clicked, [this, folderName]() { emit navigateToFolder(folderName); });
-            layout->addWidget(tag);
-        }
-
-        auto *likeBtn = new QPushButton("\uE00B");
-        likeBtn->setFixedSize(28, 28);
-        likeBtn->setCursor(Qt::PointingHandCursor);
-        likeBtn->setStyleSheet(QString("QPushButton { background: transparent; color: %1; border: none; font-size: 14px; font-family: \"Segoe MDL2 Assets\"; }").arg(Theme::accent().name()));
-        int lid = track.id;
-        connect(likeBtn, &QPushButton::clicked, [this, lid]() { emit likeToggled(lid); });
-        layout->addWidget(likeBtn);
-
-        auto *enqueueBtn = new QPushButton(QStringLiteral("\uE710"));
-        enqueueBtn->setFixedSize(28, 28);
-        enqueueBtn->setCursor(Qt::PointingHandCursor);
-        enqueueBtn->setFont(Theme::iconFont(11));
-        enqueueBtn->setToolTip(Lang::tr("Adicionar à fila"));
-        enqueueBtn->setStyleSheet(QString(
-            "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
-            "QPushButton:hover { color: %2; }"
-        ).arg(Theme::textMuted().name(), Theme::accent().name()));
-        Track eqt = track;
-        connect(enqueueBtn, &QPushButton::clicked, [this, eqt]() { emit enqueueRequested(eqt); });
-        layout->addWidget(enqueueBtn);
-
-        auto *editBtn = new QPushButton(QStringLiteral("\uE70F"));
-        editBtn->setFixedSize(28, 28);
-        editBtn->setCursor(Qt::PointingHandCursor);
-        editBtn->setFont(Theme::iconFont(11));
-        editBtn->setToolTip(Lang::tr("Editar música"));
-        editBtn->setStyleSheet(QString(
-            "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
-            "QPushButton:hover { color: %2; }"
-        ).arg(Theme::textMuted().name(), Theme::accent().name()));
-        Track et = track;
-        connect(editBtn, &QPushButton::clicked, [this, et]() { emit editTrackRequested(et); });
-        layout->addWidget(editBtn);
-
-        auto *delBtn = new QPushButton(QStringLiteral("\uE107"));
-        delBtn->setFixedSize(28, 28);
-        delBtn->setCursor(Qt::PointingHandCursor);
-        delBtn->setFont(Theme::iconFont(11));
-        delBtn->setToolTip(Lang::tr("Excluir música"));
-        delBtn->setStyleSheet(QString(
-            "QPushButton { background: transparent; color: %1; border: none; font-family: \"Segoe MDL2 Assets\"; }"
-            "QPushButton:hover { color: %2; }"
-        ).arg(Theme::textMuted().name(), Theme::danger().name()));
-        int did = track.id;
-        connect(delBtn, &QPushButton::clicked, [this, did]() { emit deleteRequested(did); });
-        layout->addWidget(delBtn);
-
-        auto *dur = new QLabel(Theme::formatTime(track.durationMs));
-        dur->setFont(Theme::monoFont(11));
-        dur->setFixedWidth(40);
-        dur->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        dur->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
-        layout->addWidget(dur);
-
-        Track t = track;
-        auto *overlay = new QPushButton(row);
-        overlay->setGeometry(0, 0, 9999, 52);
-        overlay->setStyleSheet("background: transparent; border: none;");
-        overlay->setCursor(Qt::PointingHandCursor);
-        overlay->lower();
-        connect(overlay, &QPushButton::clicked, [this, t]() { emit playRequested(t); });
-        if (!active) overlay->installEventFilter(new HoverPlayFilter(idx, idxNum, overlay));
-
-        m_contentLayout->addWidget(row);
-    }
-
-    m_contentLayout->addStretch();
+void LikedPage::refresh(int currentTrackId, bool isPlaying)
+{
+    m_listModel->reload();
+    m_listModel->setPlaybackState(currentTrackId, isPlaying);
+    rebuildHeader();
 }

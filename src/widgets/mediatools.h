@@ -54,6 +54,8 @@ inline QString findFfmpeg() {
     return {};
 }
 
+// Locate an existing yt-dlp only (no download). Prefer ensureYtDlp() from
+// tools/ytdlp_bootstrap.h when the binary may need to be fetched (P8.4).
 inline QString findYtDlp() {
     const QString appDir = QCoreApplication::applicationDirPath();
     for (const QString &candidate : {
@@ -61,6 +63,16 @@ inline QString findYtDlp() {
              QDir(appDir).filePath("../yt-dlp.exe") }) {
         if (QFileInfo::exists(candidate)) return QDir::cleanPath(candidate);
     }
+    // Managed first-run location
+    const QString managed =
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        + QStringLiteral("/tools/yt-dlp.exe");
+    if (QFileInfo::exists(managed)) return managed;
+    // PATH fallback
+    QString onPath = QStandardPaths::findExecutable(QStringLiteral("yt-dlp"));
+    if (!onPath.isEmpty()) return onPath;
+    onPath = QStandardPaths::findExecutable(QStringLiteral("yt-dlp.exe"));
+    if (!onPath.isEmpty()) return onPath;
     return {};
 }
 

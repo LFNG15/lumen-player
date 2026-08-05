@@ -5,6 +5,7 @@
 #include <QLabel>
 #include <QGridLayout>
 #include "theme.h"
+#include "design/stylesheet.h"
 #include "trackmodel.h"
 
 namespace CoverWidget {
@@ -24,7 +25,7 @@ inline QWidget *playlistCover(const Folder &folder, const QList<Track> &tracks,
         auto *img = new QLabel(cover);
         img->setGeometry(0, 0, size, size);
         img->setPixmap(pix);
-        img->setStyleSheet("background: transparent;");
+        lumen::design::StyleSheet::apply(img, "background: transparent;");
         return cover;
     }
 
@@ -34,14 +35,14 @@ inline QWidget *playlistCover(const Folder &folder, const QList<Track> &tracks,
         grid->setContentsMargins(0, 0, 0, 0);
         for (int i = 0; i < 4; ++i) {
             auto *cell = new QWidget();
-            cell->setStyleSheet(QString(
+            lumen::design::StyleSheet::apply(cell, QString(
                 "background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: %3px;")
                 .arg(tracks[i].cover.c1.name(), tracks[i].cover.c2.name())
                 .arg(qMax(2, radius / 2)));
             grid->addWidget(cell, i / 2, i % 2);
         }
     } else {
-        cover->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(cover, QString(
             "background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 %1,stop:1 %2); border-radius: %3px;")
             .arg(folder.cover.c1.name(), folder.cover.c2.name())
             .arg(radius));

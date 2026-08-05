@@ -16,6 +16,9 @@ public:
 signals:
     void folderSelected(const QString &folderName);
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private slots:
     void showCreateDialog();
     void showRenameDialog(int id, const QString &currentName);
@@ -23,8 +26,11 @@ private slots:
     void showDeleteConfirm(int id, const QString &name);
 
 private:
+    int columnCountForWidth(int w) const;
+
     TrackModel *m_model;
     QVBoxLayout *m_contentLayout;
+    int m_lastCols = -1;
 };
 
 #endif // FOLDERSPAGE_H

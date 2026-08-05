@@ -1,5 +1,13 @@
+#include "design/stylesheet.h"
+#include "design/thememanager.h"
+#include "design/i18n.h"
+#include "design/palettes.h"
 #include "mainwindow.h"
 #include "lang.h"
+#include "theme.h"
+#include <QShowEvent>
+#include <QEvent>
+#include <QApplication>
 #include <QLabel>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -14,6 +22,9 @@
 #include <QSplitter>
 #include <QCloseEvent>
 #include <QMenu>
+#include <QButtonGroup>
+#include <QRadioButton>
+#include <QCheckBox>
 #include <algorithm>
 #include "coverwidget.h"
 #include "textutils.h"
@@ -30,7 +41,7 @@ MainWindow::MainWindow(QWidget *parent)
     // ── Central widget ──────────────────────────────────────
     auto *central = new QWidget(this);
     setCentralWidget(central);
-    central->setStyleSheet(Theme::globalStyleSheet());
+    lumen::design::StyleSheet::apply(central, Theme::globalStyleSheet());
 
     auto *mainLayout = new QVBoxLayout(central);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -40,20 +51,21 @@ MainWindow::MainWindow(QWidget *parent)
     m_splitter = new QSplitter(Qt::Horizontal);
     m_splitter->setChildrenCollapsible(false);
     m_splitter->setHandleWidth(2);
-    m_splitter->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_splitter, QString(
         "QSplitter::handle { background: %1; }"
         "QSplitter::handle:hover { background: %2; }"
     ).arg(Theme::border().name(), Theme::accentRgba(0.5)));
 
     // ── Sidebar ─────────────────────────────────────────────
     m_sidebar = new QWidget();
-    m_sidebar->setStyleSheet(QString("background-color: %1;").arg(Theme::surface().name()));
+    m_sidebar->setObjectName(QStringLiteral("lumenSidebar"));
+    lumen::design::StyleSheet::apply(m_sidebar, QString("background-color: %1;").arg(Theme::surface().name()));
     buildSidebar(m_sidebar);
     m_splitter->addWidget(m_sidebar);
 
     // ── Stacked pages ───────────────────────────────────────
     m_stack = new QStackedWidget();
-    m_stack->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(m_stack, "background: transparent;");
 
     m_homePage = new HomePage(m_model, this);
     m_addPage = new AddMusicPage(m_model, this);
@@ -61,6 +73,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_folderDetailPage = new FolderDetailPage(m_model, this);
     m_likedPage = new LikedPage(m_model, this);
     m_searchPage = new SearchPage(m_model, this);
+    m_libraryPage = new LibraryPage(m_model, this);
 
     m_stack->addWidget(m_homePage);       // 0
     m_stack->addWidget(m_addPage);        // 1
@@ -70,7 +83,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Content column: global search bar on top of the pages.
     auto *contentWidget = new QWidget();
-    contentWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(contentWidget, "background: transparent;");
     contentWidget->setMinimumWidth(340);
     auto *contentColumn = new QVBoxLayout(contentWidget);
     contentColumn->setContentsMargins(0, 0, 0, 0);
@@ -83,18 +96,20 @@ MainWindow::MainWindow(QWidget *parent)
     m_splitter->setStretchFactor(1, 1);
     mainLayout->addWidget(m_splitter, 1);
 
-    // ── Player bar ──────────────────────────────────────────
-    m_playerBar = new PlayerBar(m_model, this);
+    // ── Playback engine + player bar (view) ─────────────────
+    m_engine = new PlaybackEngine(m_model, this);
+    m_playerBar = new PlayerBar(m_engine, this);
     mainLayout->addWidget(m_playerBar);
 
     m_stack->addWidget(m_searchPage);  // 5
+    m_stack->addWidget(m_libraryPage); // 6
 
     // Queue side panel (Spotify-style): lives next to the content, outside
     // the stack, and is toggled by the player bar's queue button. It needs
     // the player bar to read the live queue.
     m_queuePage = new QueuePage(m_model, m_playerBar, this);
-    m_queuePage->setMinimumWidth(220);
-    m_queuePage->setMaximumWidth(420);
+    m_queuePage->setMinimumWidth(180);
+    m_queuePage->setMaximumWidth(480);
     m_queuePage->hide();
     m_splitter->addWidget(m_queuePage);
     m_splitter->setStretchFactor(2, 0);
@@ -113,10 +128,17 @@ MainWindow::MainWindow(QWidget *parent)
             settings.setValue("sidebarWidth", m_splitter->sizes().value(0));
         if (m_queuePage->isVisible())
             settings.setValue("queueWidth", m_splitter->sizes().value(2));
-        // The grid view sizes its cells from the sidebar width.
-        if (!m_sidebarCollapsed && settings.value("sidebarView", "list").toString() == "grid")
+        // Every sidebar view mode sizes something off the sidebar width (grid
+        // cell count, list/compact name eliding) — keep it live while dragging.
+        if (!m_sidebarCollapsed)
             refreshSidebarFolders();
     });
+
+    // Live theme + language (P1) — polish chrome and rebuild visible pages.
+    connect(&lumen::design::ThemeManager::instance(), &lumen::design::ThemeManager::changed,
+            this, &MainWindow::onDesignChanged);
+    connect(&lumen::design::LanguageManager::instance(), &lumen::design::LanguageManager::changed,
+            this, &MainWindow::onDesignChanged);
 
     // ── Connections ─────────────────────────────────────────
     // Home page
@@ -142,7 +164,7 @@ MainWindow::MainWindow(QWidget *parent)
         refreshCurrentPage();
         refreshSidebarFolders();
     });
-    connect(m_addPage, &AddMusicPage::navigateBack, this, [this]() { navigateTo("home"); });
+    connect(m_addPage, &AddMusicPage::navigateBack, this, &MainWindow::navigateBack);
 
     // Folders page
     connect(m_foldersPage, &FoldersPage::folderSelected, this, [this](const QString &name) {
@@ -161,10 +183,33 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_folderDetailPage, &FolderDetailPage::editTrackRequested, this, [this](const Track &t) {
         showEditTrackDialog(t);
     });
-    connect(m_folderDetailPage, &FolderDetailPage::navigateBack, this, [this]() { navigateTo("folders"); });
+    connect(m_folderDetailPage, &FolderDetailPage::navigateBack, this, &MainWindow::navigateBack);
     connect(m_folderDetailPage, &FolderDetailPage::enqueueRequested, this, [this](const Track &t) {
         m_playerBar->enqueue(t);
         showToast(Lang::tr("Adicionado à fila"));
+    });
+
+    // Decision 7: non-blocking owner notice when a track is referenced by
+    // another playlist (file is never copied or moved).
+    connect(m_model, &TrackModel::ownerNotice, this, [this](const AddToPlaylistResult &r) {
+        QSettings s;
+        if (s.value(QStringLiteral("notices/ownerExplained"), false).toBool()
+            && !r.crossesOwner) {
+            return; // first-owner toast suppressible after user dismisses once
+        }
+        QString msg;
+        if (r.crossesOwner) {
+            msg = Lang::tr("«%1» foi adicionada a %2. O arquivo não foi duplicado — ele permanece na pasta de %3.")
+                      .arg(r.trackTitle, r.destName, r.ownerName);
+        } else if (r.firstOwner) {
+            msg = Lang::tr("«%1» foi adicionada a %2. O arquivo permanece na pasta geral do Lumen Music.")
+                      .arg(r.trackTitle, r.destName);
+        } else {
+            return;
+        }
+        showToast(msg);
+        // Remember that the user has seen the explanation.
+        s.setValue(QStringLiteral("notices/ownerExplained"), true);
     });
 
     // Liked page
@@ -173,7 +218,7 @@ MainWindow::MainWindow(QWidget *parent)
         m_model->toggleLike(id);
         refreshCurrentPage();
     });
-    connect(m_likedPage, &LikedPage::navigateBack, this, [this]() { navigateTo("home"); });
+    connect(m_likedPage, &LikedPage::navigateBack, this, &MainWindow::navigateBack);
     connect(m_likedPage, &LikedPage::navigateToFolder, this, [this](const QString &name) {
         navigateTo("folder", name);
     });
@@ -185,6 +230,23 @@ MainWindow::MainWindow(QWidget *parent)
         showEditTrackDialog(t);
     });
     connect(m_likedPage, &LikedPage::deleteRequested, this, [this](int id) {
+        if (Track *t = m_model->findTrack(id)) confirmDeleteTrack(*t);
+    });
+
+    // Library page (full, unbounded list — top-level sidebar destination)
+    connect(m_libraryPage, &LibraryPage::playRequested, this, &MainWindow::onTrackPlay);
+    connect(m_libraryPage, &LibraryPage::likeToggled, this, [this](int id) {
+        m_model->toggleLike(id);
+        refreshCurrentPage();
+    });
+    connect(m_libraryPage, &LibraryPage::enqueueRequested, this, [this](const Track &t) {
+        m_playerBar->enqueue(t);
+        showToast(Lang::tr("Adicionado à fila"));
+    });
+    connect(m_libraryPage, &LibraryPage::editTrackRequested, this, [this](const Track &t) {
+        showEditTrackDialog(t);
+    });
+    connect(m_libraryPage, &LibraryPage::deleteRequested, this, [this](int id) {
         if (Track *t = m_model->findTrack(id)) confirmDeleteTrack(*t);
     });
 
@@ -203,11 +265,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_queuePage, &QueuePage::removeFromQueueRequested, this, [this](int index) {
         m_playerBar->removeFromQueue(index);
     });
-    connect(m_queuePage, &QueuePage::likeToggled, this, [this](int id) {
-        m_model->toggleLike(id);
-        refreshCurrentPage();
+    connect(m_queuePage, &QueuePage::clearQueueRequested, this, [this]() {
+        m_playerBar->clearUserQueue();
     });
-    connect(m_queuePage, &QueuePage::navigateBack, this, [this]() { m_queuePage->hide(); });
+    connect(m_queuePage, &QueuePage::reorderQueueRequested, this, [this](int from, int to) {
+        m_playerBar->reorderUserQueue(from, to);
+    });
+    connect(m_queuePage, &QueuePage::navigateBack, this, [this]() { hideQueuePanel(); });
 
     // Search page
     connect(m_searchPage, &SearchPage::playRequested, this, &MainWindow::onTrackPlay);
@@ -226,19 +290,8 @@ MainWindow::MainWindow(QWidget *parent)
         refreshCurrentPage();
     });
     connect(m_playerBar, &PlayerBar::queueRequested, this, [this]() {
-        if (m_queuePage->isVisible()) {
-            m_queuePage->hide();
-        } else {
-            m_queuePage->refresh(m_playerBar->currentTrackId(), m_playerBar->isPlaying());
-            m_queuePage->show();
-            // Open at the width the user last dragged it to.
-            const int queueW = QSettings().value("queueWidth", 280).toInt();
-            auto sizes = m_splitter->sizes();
-            if (sizes.size() == 3) {
-                const int total = sizes[0] + sizes[1] + sizes[2];
-                m_splitter->setSizes({sizes[0], qMax(340, total - sizes[0] - queueW), queueW});
-            }
-        }
+        if (m_queuePage->isVisible()) hideQueuePanel();
+        else showQueuePanel();
     });
     connect(m_playerBar, &PlayerBar::queueChanged, this, [this]() { refreshCurrentPage(); });
 
@@ -254,24 +307,189 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Persist the playback session on quit — aboutToQuit also fires on the
     // theme/language restart path, which skips closeEvent.
-    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() { m_playerBar->persistState(); });
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
+        m_playerBar->persistState();
+        if (m_nowPlaying)
+            m_nowPlaying->setEnabled(false);
+    });
 
     // Resume the last session: same track, same position, paused.
     m_playerBar->restoreSession();
 
     // Initial state
     navigateTo("home");
+
+    // Restore the queue panel's open/closed state from the last session.
+    if (QSettings().value(QStringLiteral("queueOpen"), false).toBool())
+        showQueuePanel();
+}
+
+void MainWindow::showQueuePanel()
+{
+    m_queuePage->refresh(m_playerBar->currentTrackId(), m_playerBar->isPlaying());
+    m_queuePage->show();
+    QSettings().setValue(QStringLiteral("queueOpen"), true);
+
+    // Responsive default width: ~28% of window, clamped; restore last drag.
+    const int winW = qMax(720, width());
+    const int defW = qBound(200, winW / 4 + 40, 360);
+    int queueW = QSettings().value("queueWidth", defW).toInt();
+    queueW = qBound(180, queueW, qMin(480, winW / 2));
+    m_queuePage->setMinimumWidth(180);
+    m_queuePage->setMaximumWidth(qMin(480, qMax(220, winW / 2)));
+    auto sizes = m_splitter->sizes();
+    if (sizes.size() == 3) {
+        const int total = sizes[0] + sizes[1] + sizes[2];
+        const int contentMin = qMax(280, winW / 3);
+        queueW = qMin(queueW, total - sizes[0] - contentMin);
+        queueW = qMax(180, queueW);
+        m_splitter->setSizes({sizes[0], total - sizes[0] - queueW, queueW});
+    }
+}
+
+void MainWindow::hideQueuePanel()
+{
+    m_queuePage->hide();
+    QSettings().setValue(QStringLiteral("queueOpen"), false);
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    // SMTC needs a real HWND — only available after the window is shown.
+    if (!m_platformReady)
+        setupPlatformIntegration();
+}
+
+void MainWindow::setupPlatformIntegration()
+{
+    m_platformReady = true;
+
+    // --- SMTC (or null) ---
+    m_nowPlaying = lumen::platform::NowPlaying::create(this);
+    if (m_nowPlaying) {
+        connect(m_nowPlaying.get(), &lumen::platform::NowPlaying::commandReceived,
+                this, &MainWindow::onNowPlayingCommand);
+
+        connect(m_engine, &PlaybackEngine::trackChanged, this, [this](int) {
+            pushNowPlayingMetadata();
+        });
+        connect(m_engine, &PlaybackEngine::playingChanged, this, [this](bool playing) {
+            if (m_nowPlaying)
+                m_nowPlaying->setPlaybackState(playing);
+        });
+        connect(m_engine, &PlaybackEngine::positionChanged, this, [this](qint64 pos) {
+            if (m_nowPlaying)
+                m_nowPlaying->setTimeline(pos, m_engine->duration());
+        });
+        connect(m_engine, &PlaybackEngine::durationChanged, this, [this](qint64 dur) {
+            if (m_nowPlaying)
+                m_nowPlaying->setTimeline(m_engine->position(), dur);
+        });
+        connect(m_engine, &PlaybackEngine::queueChanged, this, [this]() {
+            if (!m_nowPlaying) return;
+            m_nowPlaying->setCanNext(true);
+            m_nowPlaying->setCanPrevious(true);
+        });
+
+        m_nowPlaying->setEnabled(true);
+        if (m_engine->currentTrackId() != 0)
+            pushNowPlayingMetadata();
+        m_nowPlaying->setPlaybackState(m_engine->isPlaying());
+    }
+
+    // --- Media keys fallback when SMTC is unavailable ---
+    m_mediaKeys = new lumen::platform::MediaKeys(this);
+    if (!m_nowPlaying || !m_nowPlaying->isAvailable()) {
+        m_mediaKeys->install();
+        connect(m_mediaKeys, &lumen::platform::MediaKeys::playPause,
+                m_engine, &PlaybackEngine::togglePlay);
+        connect(m_mediaKeys, &lumen::platform::MediaKeys::next,
+                m_engine, &PlaybackEngine::next);
+        connect(m_mediaKeys, &lumen::platform::MediaKeys::previous,
+                m_engine, &PlaybackEngine::prev);
+        connect(m_mediaKeys, &lumen::platform::MediaKeys::stop,
+                m_engine, &PlaybackEngine::stop);
+    }
+
+    // --- System tray ---
+    m_tray = new lumen::platform::TrayIcon(m_engine, this);
+    if (m_tray->isAvailable()) {
+        m_tray->show();
+        connect(m_tray, &lumen::platform::TrayIcon::showMainWindow, this, [this]() {
+            showNormal();
+            raise();
+            activateWindow();
+        });
+        connect(m_tray, &lumen::platform::TrayIcon::quitRequested, this, [this]() {
+            close();
+        });
+    }
+}
+
+void MainWindow::pushNowPlayingMetadata()
+{
+    if (!m_nowPlaying || !m_engine) return;
+    const Track t = m_engine->currentTrack();
+    if (t.id == 0) {
+        m_nowPlaying->setEnabled(false);
+        return;
+    }
+    m_nowPlaying->setEnabled(true);
+    lumen::platform::NowPlayingInfo info;
+    info.title = t.title;
+    info.artist = t.artist;
+    info.album = t.folder;
+    info.color1 = t.cover.c1;
+    info.color2 = t.cover.c2;
+    info.durationMs = t.durationMs > 0 ? t.durationMs : m_engine->duration();
+    m_nowPlaying->setMetadata(info);
+    m_nowPlaying->setPlaybackState(m_engine->isPlaying());
+    m_nowPlaying->setTimeline(m_engine->position(), info.durationMs);
+    m_nowPlaying->setCanNext(true);
+    m_nowPlaying->setCanPrevious(true);
+}
+
+void MainWindow::onNowPlayingCommand(lumen::platform::TransportCommand cmd, qint64 argMs)
+{
+    if (!m_engine) return;
+    using TC = lumen::platform::TransportCommand;
+    switch (cmd) {
+    case TC::Play:
+        if (!m_engine->isPlaying()) m_engine->togglePlay();
+        break;
+    case TC::Pause:
+        if (m_engine->isPlaying()) m_engine->togglePlay();
+        break;
+    case TC::Toggle:
+        m_engine->togglePlay();
+        break;
+    case TC::Next:
+        m_engine->next();
+        break;
+    case TC::Previous:
+        m_engine->prev();
+        break;
+    case TC::Stop:
+        m_engine->stop();
+        break;
+    case TC::Seek:
+        m_engine->seek(argMs);
+        break;
+    }
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
     m_playerBar->persistState();
+    if (m_nowPlaying)
+        m_nowPlaying->setEnabled(false);
     QMainWindow::closeEvent(event);
 }
 
 QWidget *MainWindow::buildTopBar() {
     auto *bar = new QWidget();
     bar->setFixedHeight(56);
-    bar->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(bar, "background: transparent;");
 
     auto *layout = new QHBoxLayout(bar);
     layout->setContentsMargins(32, 10, 32, 6);
@@ -282,7 +500,7 @@ QWidget *MainWindow::buildTopBar() {
     pill->setObjectName("searchPill");
     pill->setFixedHeight(40);
     pill->setMaximumWidth(440);
-    pill->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(pill, QString(
         "QWidget#searchPill { background: %1; border: 1px solid %2; border-radius: 20px; }"
     ).arg(Theme::surface().name(), Theme::border().name()));
 
@@ -292,14 +510,14 @@ QWidget *MainWindow::buildTopBar() {
 
     auto *searchIcon = new QLabel("");
     searchIcon->setFont(Theme::iconFont(13));
-    searchIcon->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    lumen::design::StyleSheet::apply(searchIcon, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     pillLayout->addWidget(searchIcon);
 
     m_searchEdit = new QLineEdit();
     m_searchEdit->setPlaceholderText(Lang::tr("O que você quer ouvir?"));
     m_searchEdit->setFont(Theme::bodyFont(12));
     m_searchEdit->setClearButtonEnabled(true);
-    m_searchEdit->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_searchEdit, QString(
         "QLineEdit { background: transparent; color: %1; border: none; }"
     ).arg(Theme::text().name()));
     pillLayout->addWidget(m_searchEdit, 1);
@@ -327,7 +545,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 
     // Logo
     auto *logoWidget = new QWidget();
-    logoWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(logoWidget, "background: transparent;");
     m_logoLayout = new QHBoxLayout(logoWidget);
     m_logoLayout->setContentsMargins(20, 20, 20, 16);
     m_logoLayout->setSpacing(8);
@@ -335,19 +553,19 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     auto *logoIcon = new QLabel();
     logoIcon->setFixedSize(30, 30);
     logoIcon->setScaledContents(true);
-    logoIcon->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(logoIcon, "background: transparent;");
     logoIcon->setPixmap(QIcon(":/icon.png").pixmap(30, 30));
     m_logoLayout->addWidget(logoIcon);
 
     m_logoText = new QLabel("Lumen");
     m_logoText->setFont(Theme::titleFont(18));
-    m_logoText->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::text().name()));
+    lumen::design::StyleSheet::apply(m_logoText, QString("color: %1; background: transparent;").arg(Theme::text().name()));
     m_logoLayout->addWidget(m_logoText);
 
     m_badge = new QLabel("MUSIC");
     m_badge->setFont(Theme::bodyFont(9));
     QColor ac = Theme::accent();
-    m_badge->setStyleSheet(QString("color: %1; background: rgba(%2,%3,%4,0.16); border-radius: 4px; padding: 2px 6px; font-weight: bold; letter-spacing: 1px;")
+    lumen::design::StyleSheet::apply(m_badge, QString("color: %1; background: rgba(%2,%3,%4,0.16); border-radius: 4px; padding: 2px 6px; font-weight: bold; letter-spacing: 1px;")
         .arg(Theme::accent().name()).arg(ac.red()).arg(ac.green()).arg(ac.blue()));
     m_logoLayout->addWidget(m_badge);
     m_logoLayout->addStretch();
@@ -357,9 +575,9 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_collapseBtn->setFixedSize(24, 24);
     m_collapseBtn->setCursor(Qt::PointingHandCursor);
     m_collapseBtn->setFont(Theme::iconFont(10));
-    m_collapseBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_collapseBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 12px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::text().name()));
     connect(m_collapseBtn, &QPushButton::clicked, this, [this]() {
         applySidebarCollapsed(!m_sidebarCollapsed);
@@ -370,51 +588,57 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 
     // Navigation buttons
     auto *navWidget = new QWidget();
-    navWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(navWidget, "background: transparent;");
     auto *navLayout = new QVBoxLayout(navWidget);
     navLayout->setContentsMargins(10, 0, 10, 0);
     navLayout->setSpacing(2);
 
     auto makeNavBtn = [this](const QString &text, const QString &icon) -> QPushButton* {
         auto *btn = new QPushButton(QString("  %1  %2").arg(icon, text));
+        btn->setObjectName(QStringLiteral("lumenNavItem"));
         btn->setFixedHeight(40);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFont(Theme::bodyFont(13));
         // Stash the parts so the collapsed mode can show the icon alone.
         btn->setProperty("navIcon", icon);
         btn->setProperty("navText", text);
-        btn->setStyleSheet(QString(
-            "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; text-align: left; padding-left: 14px; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.05); color: %2; }"
-        ).arg(Theme::textSoft().name(), Theme::text().name()));
+        // Idle soft; hover/active use solid accent + onAccent (white on deep accents).
+        lumen::design::StyleSheet::apply(btn, QString(
+            "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; "
+            "text-align: left; padding-left: 14px; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; font-weight: 600; }"
+            "QPushButton:hover { background-color: %2; color: %3; }"
+        ).arg(Theme::textSoft().name(), Theme::accent().name(), Theme::onAccent().name()));
         return btn;
     };
 
     m_navHome    = makeNavBtn(Lang::tr("Início"),    "\uE10F");
     m_navAdd     = makeNavBtn(Lang::tr("Adicionar"), "\uE109");
     m_navFolders = makeNavBtn(Lang::tr("Playlists"), "\uE188");
+    m_navLibrary = makeNavBtn(Lang::tr("Biblioteca Completa"), "\uE142");
 
     connect(m_navHome, &QPushButton::clicked, [this]() { navigateTo("home"); });
     connect(m_navAdd, &QPushButton::clicked, [this]() { navigateTo("add"); });
     connect(m_navFolders, &QPushButton::clicked, [this]() { navigateTo("folders"); });
+    connect(m_navLibrary, &QPushButton::clicked, [this]() { navigateTo("library"); });
 
     navLayout->addWidget(m_navHome);
     navLayout->addWidget(m_navAdd);
     navLayout->addWidget(m_navFolders);
+    navLayout->addWidget(m_navLibrary);
 
     layout->addWidget(navWidget);
 
     // Sidebar folders header: label + search toggle + sort/view menu,
     // like Spotify's "Your Library" header.
     m_foldersHeaderRow = new QWidget();
-    m_foldersHeaderRow->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(m_foldersHeaderRow, "background: transparent;");
     auto *headerLayout = new QHBoxLayout(m_foldersHeaderRow);
     headerLayout->setContentsMargins(20, 16, 14, 4);
     headerLayout->setSpacing(2);
 
     m_foldersHeader = new QLabel(Lang::tr("SUAS PLAYLISTS"));
     m_foldersHeader->setFont(Theme::bodyFont(10));
-    m_foldersHeader->setStyleSheet(QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;")
+    lumen::design::StyleSheet::apply(m_foldersHeader, QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;")
         .arg(Theme::textMuted().name()));
     headerLayout->addWidget(m_foldersHeader);
     headerLayout->addStretch();
@@ -425,9 +649,9 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFont(Theme::iconFont(11));
         btn->setToolTip(tip);
-        btn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(btn, QString(
             "QPushButton { background: transparent; color: %1; border: none; border-radius: 12px; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+            "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
         ).arg(Theme::textMuted().name(), Theme::text().name()));
         return btn;
     };
@@ -448,7 +672,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_sidebarSearchEdit->setFont(Theme::bodyFont(11));
     m_sidebarSearchEdit->setClearButtonEnabled(true);
     m_sidebarSearchEdit->setFixedHeight(30);
-    m_sidebarSearchEdit->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_sidebarSearchEdit, QString(
         "QLineEdit { background: %1; color: %2; border: 1px solid %3; border-radius: 15px; padding: 0 12px; margin: 0 10px 4px; }"
         "QLineEdit:focus { border-color: %4; }"
     ).arg(Theme::surface().name(), Theme::text().name(),
@@ -463,10 +687,10 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     auto *scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
-    scrollArea->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+    lumen::design::StyleSheet::apply(scrollArea, "QScrollArea { background: transparent; border: none; }");
 
     m_sidebarFoldersContainer = new QWidget();
-    m_sidebarFoldersContainer->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(m_sidebarFoldersContainer, "background: transparent;");
     m_sidebarFoldersLayout = new QVBoxLayout(m_sidebarFoldersContainer);
     m_sidebarFoldersLayout->setContentsMargins(10, 0, 10, 0);
     m_sidebarFoldersLayout->setSpacing(1);
@@ -478,12 +702,12 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     // Footer
     auto *footerSep = new QFrame();
     footerSep->setFrameShape(QFrame::HLine);
-    footerSep->setStyleSheet(QString("color: %1;").arg(Theme::border().name()));
+    lumen::design::StyleSheet::apply(footerSep, QString("color: %1;").arg(Theme::border().name()));
     footerSep->setFixedHeight(1);
     layout->addWidget(footerSep);
 
     auto *footerWidget = new QWidget();
-    footerWidget->setStyleSheet("background: transparent;");
+    lumen::design::StyleSheet::apply(footerWidget, "background: transparent;");
     auto *footerLayout = new QHBoxLayout(footerWidget);
     footerLayout->setContentsMargins(20, 8, 12, 12);
     footerLayout->setSpacing(4);
@@ -492,7 +716,8 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         .arg(m_model->tracks().size())
         .arg(m_model->tracks().size() != 1 ? "s" : ""));
     m_trackCountLabel->setFont(Theme::bodyFont(10));
-    m_trackCountLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    m_trackCountLabel->setMinimumWidth(0); // never force the lang/theme buttons out of view
+    lumen::design::StyleSheet::apply(m_trackCountLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
     footerLayout->addWidget(m_trackCountLabel, 1);
 
     m_langBtn = new QPushButton(Lang::isEnglish() ? "EN" : "PT");
@@ -500,9 +725,9 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_langBtn->setCursor(Qt::PointingHandCursor);
     m_langBtn->setFont(Theme::bodyFont(9));
     m_langBtn->setToolTip(Lang::tr("Idioma"));
-    m_langBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_langBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; font-weight: bold; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::accent().name()));
     connect(m_langBtn, &QPushButton::clicked, this, &MainWindow::showLanguagePicker);
     footerLayout->addWidget(m_langBtn);
@@ -512,9 +737,9 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     themeBtn->setCursor(Qt::PointingHandCursor);
     themeBtn->setFont(Theme::iconFont(12));
     themeBtn->setToolTip(Lang::tr("Escolher tema"));
-    themeBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(themeBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.08); color: %2; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
     ).arg(Theme::textMuted().name(), Theme::accent().name()));
     connect(themeBtn, &QPushButton::clicked, this, &MainWindow::showThemePicker);
     footerLayout->addWidget(themeBtn);
@@ -523,7 +748,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 }
 
 void MainWindow::updateNavButtons() {
-    for (auto *btn : {m_navHome, m_navAdd, m_navFolders}) {
+    for (auto *btn : {m_navHome, m_navAdd, m_navFolders, m_navLibrary}) {
         const QString icon = btn->property("navIcon").toString();
         const QString text = btn->property("navText").toString();
         btn->setText(m_sidebarCollapsed ? icon : QString("  %1  %2").arg(icon, text));
@@ -608,24 +833,32 @@ void MainWindow::refreshSidebarFolders() {
         return m_currentPage == "folder"
             && m_folderDetailPage->property("folderName").toString() == f.name;
     };
+    // "Your Playlists" rows: no orange hover. Active = subtle surface tint only.
     auto rowStyle = [](bool active) {
+        if (active) {
+            return QString(
+                "QPushButton { background-color: %1; border: none; border-radius: 8px; color: %2; }"
+                "QPushButton:hover { background-color: %1; color: %2; }"
+            ).arg(Theme::cardHover().name(), Theme::text().name());
+        }
         return QString(
-            "QPushButton { background: %1; border: none; border-radius: 8px; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.05); }"
-        ).arg(active ? Theme::accentRgba(0.12) : QStringLiteral("transparent"));
+            "QPushButton { background: transparent; border: none; border-radius: 8px; color: %1; }"
+            "QPushButton:hover { background: transparent; color: %1; }"
+            "QPushButton:pressed { background: transparent; color: %1; }"
+        ).arg(Theme::textSoft().name());
     };
 
     if (folders.isEmpty()) {
         if (!m_sidebarCollapsed) {
             auto *emptyLabel = new QLabel(Lang::tr("Nenhuma playlist"));
             emptyLabel->setFont(Theme::bodyFont(11));
-            emptyLabel->setStyleSheet(QString("color: %1; background: transparent; padding: 4px 14px;").arg(Theme::textMuted().name()));
+            lumen::design::StyleSheet::apply(emptyLabel, QString("color: %1; background: transparent; padding: 4px 14px;").arg(Theme::textMuted().name()));
             m_sidebarFoldersLayout->addWidget(emptyLabel);
         }
     } else if (!m_sidebarCollapsed && viewMode == "grid") {
         // Grid of covers with the name underneath, like Spotify's grid view.
         auto *gridWidget = new QWidget();
-        gridWidget->setStyleSheet("background: transparent;");
+        lumen::design::StyleSheet::apply(gridWidget, "background: transparent;");
         auto *grid = new QGridLayout(gridWidget);
         grid->setContentsMargins(0, 0, 0, 0);
         grid->setSpacing(6);
@@ -651,10 +884,10 @@ void MainWindow::refreshSidebarFolders() {
             auto *nameLabel = new QLabel(QFontMetrics(Theme::bodyFont(10))
                 .elidedText(f.name, Qt::ElideRight, cellW - 12));
             nameLabel->setFont(Theme::bodyFont(10));
-            nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+            lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
             cellLayout->addWidget(nameLabel, 0, Qt::AlignHCenter);
 
-            btn->setStyleSheet(rowStyle(isActiveFolder(f)));
+            lumen::design::StyleSheet::apply(btn, rowStyle(isActiveFolder(f)));
             QString folderName = f.name;
             connect(btn, &QPushButton::clicked, [this, folderName]() { navigateTo("folder", folderName); });
             grid->addWidget(btn, i / cols, i % cols);
@@ -684,18 +917,33 @@ void MainWindow::refreshSidebarFolders() {
                 btnLayout->setSpacing(8);
                 if (!compact)
                     btnLayout->addWidget(CoverWidget::playlistCover(f, tracks, 28, 5), 0, Qt::AlignVCenter);
-                auto *nameLabel = new QLabel(f.name);
-                nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
+                const bool active = isActiveFolder(f);
+                // Labels don't inherit QPushButton color — set explicitly.
+                const QString nameCol = active ? Theme::text().name() : Theme::textSoft().name();
+                const QString countCol = active ? Theme::textSoft().name() : Theme::textMuted().name();
+                // Elide against the sidebar's live (draggable) width — otherwise a
+                // long playlist name refuses to shrink and overlaps countLabel.
+                const int coverW = compact ? 0 : 36;   // cover + its spacing
+                const int nameAvail = qMax(40, m_sidebar->width() - 22 /*margins*/ - coverW - 28 /*count*/ - 8);
+                auto *nameLabel = new QLabel(QFontMetrics(Theme::bodyFont(12))
+                    .elidedText(f.name, Qt::ElideRight, nameAvail));
+                nameLabel->setToolTip(f.name);
+                nameLabel->setMinimumWidth(0);
+                nameLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+                lumen::design::StyleSheet::apply(nameLabel, QString(
+                    "color: %1; background: transparent;").arg(nameCol));
                 nameLabel->setFont(Theme::bodyFont(12));
                 auto *countLabel = new QLabel(QString::number(tracks.size()));
+                countLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
                 countLabel->setFont(Theme::monoFont(10));
-                countLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+                lumen::design::StyleSheet::apply(countLabel, QString(
+                    "color: %1; background: transparent;").arg(countCol));
                 btnLayout->addWidget(nameLabel);
                 btnLayout->addStretch();
                 btnLayout->addWidget(countLabel);
             }
 
-            btn->setStyleSheet(rowStyle(isActiveFolder(f)));
+            lumen::design::StyleSheet::apply(btn, rowStyle(isActiveFolder(f)));
 
             QString folderName = f.name;
             connect(btn, &QPushButton::clicked, [this, folderName]() { navigateTo("folder", folderName); });
@@ -719,7 +967,7 @@ void MainWindow::toggleSidebarSearch() {
 
 void MainWindow::showSidebarSortMenu() {
     auto *menu = new QMenu(this);
-    menu->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(menu, QString(
         "QMenu { background: %1; border: 1px solid %2; border-radius: 8px; padding: 4px; color: %3; }"
         "QMenu::item { padding: 8px 16px; border-radius: 4px; }"
         "QMenu::item:selected { background: %4; }"
@@ -773,7 +1021,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     dlg->setWindowTitle(Lang::tr("Editar Música"));
     dlg->setFixedSize(380, 200);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
         "QLabel { background: transparent; color: %2; }"
         "QLineEdit { background: %3; color: %2; border: 1px solid %4; border-radius: 8px; padding: 8px 12px; }"
@@ -805,9 +1053,9 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     cancelBtn->setFont(Theme::bodyFont(12));
     cancelBtn->setFixedHeight(36);
     cancelBtn->setCursor(Qt::PointingHandCursor);
-    cancelBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(cancelBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; padding: 0 16px; }"
-        "QPushButton:hover { background: rgba(255,255,255,0.05); }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.05) + "; }"
     ).arg(Theme::textSoft().name(), Theme::border().name()));
     connect(cancelBtn, &QPushButton::clicked, dlg, &QDialog::reject);
     btnRow->addWidget(cancelBtn);
@@ -816,10 +1064,10 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     saveBtn->setFont(Theme::bodyFont(12));
     saveBtn->setFixedHeight(36);
     saveBtn->setCursor(Qt::PointingHandCursor);
-    saveBtn->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(saveBtn, QString(
         "QPushButton { background: %1; color: %2; border: none; border-radius: 18px; padding: 0 20px; font-weight: bold; }"
         "QPushButton:hover { background: %3; }"
-    ).arg(Theme::accent().name(), Theme::bg().name(), Theme::accent().lighter(110).name()));
+    ).arg(Theme::accent().name(), Theme::onAccent().name(), Theme::accentHover().name()));
     connect(saveBtn, &QPushButton::clicked, [this, dlg, titleEdit, artistEdit, id]() {
         QString title = titleEdit->text().trimmed();
         if (title.isEmpty()) return;
@@ -840,7 +1088,7 @@ void MainWindow::confirmDeleteTrack(const Track &track) {
     dlg->setInformativeText(Lang::tr("A música será removida da biblioteca."));
     dlg->setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
     dlg->setDefaultButton(QMessageBox::Cancel);
-    dlg->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(dlg, QString(
         "QMessageBox { background: %1; color: %2; } QLabel { color: %2; background: transparent; }"
         "QPushButton { background: %3; color: %2; border: 1px solid %4; border-radius: 8px; padding: 6px 16px; min-width: 70px; }"
         "QPushButton:hover { background: %5; }"
@@ -863,7 +1111,7 @@ void MainWindow::showToast(const QString &text) {
     }
     // Light pill with dark text, like Spotify's "Added to queue".
     m_toast->setFont(Theme::bodyFont(12));
-    m_toast->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(m_toast, QString(
         "background: %1; color: %2; border-radius: 8px; padding: 10px 18px; font-weight: 600;")
         .arg(Theme::text().name(), Theme::bg().name()));
     m_toast->setText(text);
@@ -871,7 +1119,9 @@ void MainWindow::showToast(const QString &text) {
     repositionToast();
     m_toast->show();
     m_toast->raise();
-    m_toastTimer->start(1800);
+    // Respect reduce-motion: 0 ms hides immediately (still flashes once).
+    const int toastMs = lumen::design::ThemeManager::motion().d(1800);
+    m_toastTimer->start(toastMs > 0 ? toastMs : 1);
 }
 
 void MainWindow::repositionToast() {
@@ -884,30 +1134,102 @@ void MainWindow::repositionToast() {
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
     if (m_toast && m_toast->isVisible()) repositionToast();
+
+    // Keep content readable on narrow windows: clamp queue so the track list
+    // is not crushed. Reflow page grids live (debounced).
+    if (!m_splitter) return;
+    const int w = width();
+    if (m_queuePage && m_queuePage->isVisible()) {
+        const int queueMax = qBound(200, w / 3, 480);
+        const int queueMin = w < 900 ? 180 : 200;
+        m_queuePage->setMaximumWidth(queueMax);
+        m_queuePage->setMinimumWidth(queueMin);
+        auto sizes = m_splitter->sizes();
+        if (sizes.size() >= 3) {
+            int q = sizes[2];
+            if (q > queueMax) q = queueMax;
+            if (q < queueMin) q = queueMin;
+            if (q != sizes[2]) {
+                const int delta = sizes[2] - q;
+                sizes[2] = q;
+                sizes[1] = qMax(260, sizes[1] + delta);
+                m_splitter->setSizes(sizes);
+            }
+        }
+    }
+    // Content pane floor
+    if (QWidget *content = m_stack ? m_stack->parentWidget() : nullptr)
+        content->setMinimumWidth(w < 800 ? 280 : 340);
+
+    // Live layout reflow: grids rebuild only when width moves enough.
+    if (!m_resizeLayoutTimer) {
+        m_resizeLayoutTimer = new QTimer(this);
+        m_resizeLayoutTimer->setSingleShot(true);
+        connect(m_resizeLayoutTimer, &QTimer::timeout, this, [this]() {
+            const int wNow = width();
+            if (m_lastLayoutWidth > 0 && qAbs(wNow - m_lastLayoutWidth) < 24)
+                return;
+            m_lastLayoutWidth = wNow;
+            refreshCurrentPage();
+            // Sidebar grid view sizes cells from width.
+            if (!m_sidebarCollapsed
+                && QSettings().value(QStringLiteral("sidebarView"), QStringLiteral("list")).toString()
+                       == QLatin1String("grid")) {
+                refreshSidebarFolders();
+            }
+        });
+    }
+    m_resizeLayoutTimer->start(40);
 }
 
 void MainWindow::navigateTo(const QString &page, const QString &data) {
-    m_currentPage = page;
+    // Record real history: push where we're leaving FROM, so navigateBack()
+    // can return to whatever the user actually came from — not a fixed
+    // per-button destination. Skip when this call is itself a back-navigation
+    // (already popped, don't re-push), on the very first navigation (nothing
+    // to go back to yet), or when it's a same-destination refresh (some
+    // callers re-invoke navigateTo(m_currentPage, ...) just to redraw, e.g.
+    // after collapsing the sidebar — data is only meaningful for "folder").
+    const bool sameDestination = (page == m_currentPage)
+        && (page != QStringLiteral("folder") || data == m_currentPageData);
+    if (!m_navigatingBack && !m_currentPage.isEmpty() && !sameDestination)
+        m_navHistory.append(qMakePair(m_currentPage, m_currentPageData));
+    m_navigatingBack = false;
 
-    // Update nav button styles (centered icons in collapsed mode)
+    m_currentPage = page;
+    m_currentPageData = data;
+
+    // Nav chrome: idle = soft text; hover/active = solid accent + onAccent (white).
     auto activeStyle = [this](bool active) {
         const QString align = m_sidebarCollapsed
             ? QStringLiteral("text-align: center; padding-left: 0px;")
             : QStringLiteral("text-align: left; padding-left: 14px;");
+        const QString fam = QStringLiteral(
+            "font-family: \"Segoe UI\", \"Segoe MDL2 Assets\"; border: none; border-radius: 10px; ");
         if (active) {
             return QString(
-                "QPushButton { background: " + Theme::accentRgba(0.15) + "; color: %1; border: none; border-radius: 10px; " + align + " font-weight: bold; }"
-            ).arg(Theme::accent().name());
+                "QPushButton { background-color: %1; color: %2; %3 %4 font-weight: 700; }"
+                "QPushButton:hover { background-color: %5; color: %2; }"
+            ).arg(Theme::accent().name(),
+                  Theme::onAccent().name(),
+                  fam,
+                  align,
+                  Theme::accentHover().name());
         }
         return QString(
-            "QPushButton { background: transparent; color: %1; border: none; border-radius: 10px; " + align + " }"
-            "QPushButton:hover { background: rgba(255,255,255,0.05); color: %2; }"
-        ).arg(Theme::textSoft().name(), Theme::text().name());
+            "QPushButton { background: transparent; color: %1; %2 %3 font-weight: 600; }"
+            "QPushButton:hover { background-color: %4; color: %5; }"
+        ).arg(Theme::textSoft().name(),
+              fam,
+              align,
+              Theme::accent().name(),
+              Theme::onAccent().name());
     };
 
-    m_navHome->setStyleSheet(activeStyle(page == "home"));
-    m_navAdd->setStyleSheet(activeStyle(page == "add"));
-    m_navFolders->setStyleSheet(activeStyle(page == "folders" || page == "folder"));
+    lumen::design::StyleSheet::apply(m_navHome, activeStyle(page == "home"));
+    lumen::design::StyleSheet::apply(m_navAdd, activeStyle(page == "add"));
+    lumen::design::StyleSheet::apply(m_navFolders, activeStyle(page == "folders" || page == "folder"));
+    lumen::design::StyleSheet::apply(m_navLibrary, activeStyle(page == "library"));
 
     if (page == "home") {
         m_stack->setCurrentIndex(0);
@@ -924,10 +1246,22 @@ void MainWindow::navigateTo(const QString &page, const QString &data) {
         m_stack->setCurrentIndex(4);
     } else if (page == "search") {
         m_stack->setCurrentIndex(5);
+    } else if (page == "library") {
+        m_stack->setCurrentIndex(6);
     }
 
     refreshCurrentPage();
     refreshSidebarFolders();
+}
+
+void MainWindow::navigateBack() {
+    if (m_navHistory.isEmpty()) {
+        navigateTo(QStringLiteral("home"));
+        return;
+    }
+    const auto prev = m_navHistory.takeLast();
+    m_navigatingBack = true;
+    navigateTo(prev.first, prev.second);
 }
 
 void MainWindow::refreshCurrentPage() {
@@ -944,6 +1278,8 @@ void MainWindow::refreshCurrentPage() {
         m_likedPage->refresh(curId, playing);
     } else if (m_stack->currentIndex() == 5) {
         m_searchPage->refresh(curId, playing);
+    } else if (m_stack->currentIndex() == 6) {
+        m_libraryPage->refresh(curId, playing);
     }
 
     // The queue side panel lives outside the stack; keep it live while open.
@@ -953,18 +1289,60 @@ void MainWindow::refreshCurrentPage() {
 
 void MainWindow::onTrackPlay(const Track &track) {
     // Build the playback queue from the context the track was launched in, so
-    // each playlist plays within itself instead of the whole library.
+    // each playlist plays within itself instead of the whole library. The name
+    // travels alongside it so the queue panel can label "A seguir" like Spotify's
+    // "Next from: <playlist>".
     QList<Track> queue;
+    QString contextName;
     if (m_currentPage == "folder") {
         // Use the page's displayed order so next/prev follow the sort mode.
         queue = m_folderDetailPage->displayedTracks();
+        contextName = m_folderDetailPage->property("folderName").toString();
     } else if (m_currentPage == "liked") {
         queue = m_model->likedTracks();
+        contextName = Lang::tr("Curtidas");
     } else {
-        queue = m_model->tracks();   // home / full library
+        queue = m_model->tracks();   // home / full library / search
+        contextName = Lang::tr("Biblioteca Completa");
     }
-    m_playerBar->playTrack(track, queue);
+    m_playerBar->playTrack(track, queue, contextName);
     refreshCurrentPage();
+}
+
+void MainWindow::onDesignChanged()
+{
+    reapplyChromeStyles();
+    if (m_langBtn)
+        m_langBtn->setText(Lang::isEnglish() ? QStringLiteral("EN") : QStringLiteral("PT"));
+    refreshSidebarFolders();
+    // Rebuild the visible page(s) so widget-local colors pick up new tokens.
+    if (m_foldersPage)
+        m_foldersPage->refresh();
+    refreshCurrentPage();
+    if (m_playerBar)
+        m_playerBar->update();
+    update();
+}
+
+void MainWindow::reapplyChromeStyles()
+{
+    if (centralWidget())
+        lumen::design::StyleSheet::apply(centralWidget(), Theme::globalStyleSheet());
+    if (m_sidebar)
+        lumen::design::StyleSheet::apply(m_sidebar,
+            QStringLiteral("background-color: %1;").arg(Theme::surface().name()));
+    if (m_playerBar) {
+        lumen::design::StyleSheet::apply(m_playerBar,
+            QStringLiteral("PlayerBar { background-color: %1; border-top: 1px solid %2; }")
+                .arg(Theme::surface().name(), Theme::border().name()));
+    }
+    if (m_logoText)
+        lumen::design::StyleSheet::apply(m_logoText,
+            QStringLiteral("color: %1; background: transparent;").arg(Theme::text().name()));
+    if (m_trackCountLabel)
+        lumen::design::StyleSheet::apply(m_trackCountLabel,
+            QStringLiteral("color: %1; background: transparent;").arg(Theme::textMuted().name()));
+    updateNavButtons();
 }
 
 void MainWindow::showLanguagePicker() {
@@ -972,7 +1350,7 @@ void MainWindow::showLanguagePicker() {
     dlg->setWindowTitle(Lang::tr("Idioma"));
     dlg->setFixedSize(280, 150);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
         "QLabel  { background: transparent; color: %2; }"
     ).arg(Theme::surface().name(), Theme::text().name()));
@@ -994,7 +1372,7 @@ void MainWindow::showLanguagePicker() {
         btn->setFixedHeight(38);
         btn->setCursor(Qt::PointingHandCursor);
         btn->setFont(Theme::bodyFont(12));
-        btn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(btn, QString(
             "QPushButton { background: %1; color: %2; border: 1px solid %3; border-radius: 10px; font-weight: bold; }"
             "QPushButton:hover { border-color: %4; }"
         ).arg(active ? Theme::accentRgba(0.15) : Theme::card().name(),
@@ -1003,12 +1381,10 @@ void MainWindow::showLanguagePicker() {
               Theme::accent().name()));
 
         QString id = opt.id;
-        connect(btn, &QPushButton::clicked, dlg, [this, id, dlg]() {
-            QSettings s;
-            s.setValue("language", id);
+        connect(btn, &QPushButton::clicked, dlg, [id, dlg]() {
+            // Live language switch — no restart (P1.5).
+            lumen::design::LanguageManager::instance().setLang(id);
             dlg->accept();
-            // Same restart path as switching themes.
-            emit themeChangeRequested();
         });
         layout->addWidget(btn);
     }
@@ -1019,9 +1395,9 @@ void MainWindow::showLanguagePicker() {
 void MainWindow::showThemePicker() {
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(Lang::tr("Escolher Tema"));
-    dlg->setFixedSize(356, 290);
+    dlg->setMinimumSize(380, 460);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setStyleSheet(QString(
+    lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
         "QLabel  { background: transparent; color: %2; }"
     ).arg(Theme::surface().name(), Theme::text().name()));
@@ -1044,11 +1420,11 @@ void MainWindow::showThemePicker() {
         const auto &t = themes[i];
 
         auto *btn = new QPushButton();
-        btn->setFixedSize(152, 72);
+        btn->setFixedSize(160, 72);
         btn->setCursor(Qt::PointingHandCursor);
 
         bool active = (t.id == curId);
-        btn->setStyleSheet(QString(
+        lumen::design::StyleSheet::apply(btn, QString(
             "QPushButton {"
             "  background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
             "    stop:0 %1, stop:1 %2);"
@@ -1066,20 +1442,76 @@ void MainWindow::showThemePicker() {
 
         auto *nameLabel = new QLabel(Lang::tr(t.name));
         nameLabel->setFont(Theme::bodyFont(10));
-        nameLabel->setStyleSheet(QString("color: %1; background: transparent;").arg(t.text.name()));
+        lumen::design::StyleSheet::apply(nameLabel, QString("color: %1; background: transparent;").arg(t.text.name()));
         nameLabel->setAlignment(Qt::AlignCenter);
         btnLayout->addWidget(nameLabel);
 
-        connect(btn, &QPushButton::clicked, dlg, [this, t, dlg]() {
-            QSettings s;
-            s.setValue("theme", t.id);
+        connect(btn, &QPushButton::clicked, dlg, [t, dlg]() {
+            // Live palette switch — no restart (P1.3).
+            lumen::design::ThemeManager::instance().setPaletteId(t.id);
             dlg->accept();
-            emit themeChangeRequested();
         });
 
         grid->addWidget(btn, i / 2, i % 2);
     }
-
     layout->addLayout(grid);
+
+    // Mode axis (dark / light / high contrast)
+    auto *modeLabel = new QLabel(Lang::tr("Modo"));
+    modeLabel->setFont(Theme::bodyFont(12));
+    layout->addWidget(modeLabel);
+    auto *modeRow = new QHBoxLayout();
+    auto *modeGroup = new QButtonGroup(dlg);
+    struct ModeOpt { lumen::design::Mode mode; const char *label; };
+    const ModeOpt modes[] = {
+        {lumen::design::Mode::Dark, "Escuro"},
+        {lumen::design::Mode::Light, "Claro"},
+        {lumen::design::Mode::HighContrast, "Alto contraste"},
+    };
+    const auto curMode = lumen::design::ThemeManager::instance().mode();
+    for (const auto &m : modes) {
+        auto *rb = new QRadioButton(Lang::tr(m.label));
+        rb->setFont(Theme::bodyFont(11));
+        rb->setChecked(curMode == m.mode);
+        modeGroup->addButton(rb);
+        modeRow->addWidget(rb);
+        connect(rb, &QRadioButton::toggled, dlg, [m](bool on) {
+            if (on) lumen::design::ThemeManager::instance().setMode(m.mode);
+        });
+    }
+    layout->addLayout(modeRow);
+
+    // Density axis
+    auto *densLabel = new QLabel(Lang::tr("Densidade"));
+    densLabel->setFont(Theme::bodyFont(12));
+    layout->addWidget(densLabel);
+    auto *densRow = new QHBoxLayout();
+    auto *densGroup = new QButtonGroup(dlg);
+    struct DensOpt { lumen::design::Density d; const char *label; };
+    const DensOpt dens[] = {
+        {lumen::design::Density::Comfortable, "Confortável"},
+        {lumen::design::Density::Compact, "Compacta"},
+    };
+    const auto curDens = lumen::design::ThemeManager::instance().density();
+    for (const auto &d : dens) {
+        auto *rb = new QRadioButton(Lang::tr(d.label));
+        rb->setFont(Theme::bodyFont(11));
+        rb->setChecked(curDens == d.d);
+        densGroup->addButton(rb);
+        densRow->addWidget(rb);
+        connect(rb, &QRadioButton::toggled, dlg, [d](bool on) {
+            if (on) lumen::design::ThemeManager::instance().setDensity(d.d);
+        });
+    }
+    layout->addLayout(densRow);
+
+    auto *reduce = new QCheckBox(Lang::tr("Reduzir movimento"));
+    reduce->setFont(Theme::bodyFont(11));
+    reduce->setChecked(lumen::design::ThemeManager::instance().reduceMotion());
+    connect(reduce, &QCheckBox::toggled, dlg, [](bool on) {
+        lumen::design::ThemeManager::instance().setReduceMotion(on);
+    });
+    layout->addWidget(reduce);
+
     dlg->exec();
 }

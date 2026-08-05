@@ -2,8 +2,12 @@
 #define LIKEDPAGE_H
 
 #include <QWidget>
-#include <QVBoxLayout>
 #include "trackmodel.h"
+
+class QListView;
+class TrackListModel;
+class TrackRowDelegate;
+class TrackContextMenu;
 
 class LikedPage : public QWidget {
     Q_OBJECT
@@ -21,8 +25,16 @@ signals:
     void navigateToFolder(const QString &folderName);
 
 private:
-    TrackModel *m_model;
-    QVBoxLayout *m_contentLayout;
+    void rebuildHeader();
+    void showContext(const QPoint &globalPos);
+    QList<int> selectedIds() const;
+
+    TrackModel *m_model = nullptr;
+    QWidget *m_header = nullptr;
+    QListView *m_view = nullptr;
+    TrackListModel *m_listModel = nullptr;
+    TrackRowDelegate *m_delegate = nullptr;
+    TrackContextMenu *m_ctx = nullptr;
 };
 
 #endif // LIKEDPAGE_H
