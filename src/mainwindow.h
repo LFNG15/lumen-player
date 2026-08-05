@@ -17,6 +17,7 @@
 #include "likedpage.h"
 #include "queuepage.h"
 #include "searchpage.h"
+#include "librarypage.h"
 #include "platform/nowplaying.h"
 #include "platform/mediakeys.h"
 #include "platform/trayicon.h"
@@ -79,6 +80,7 @@ private:
     LikedPage *m_likedPage;
     QueuePage *m_queuePage = nullptr;
     SearchPage *m_searchPage;
+    LibraryPage *m_libraryPage;
     QLineEdit *m_searchEdit;
 
     // Sidebar
@@ -87,6 +89,7 @@ private:
     QPushButton *m_navHome;
     QPushButton *m_navAdd;
     QPushButton *m_navFolders;
+    QPushButton *m_navLibrary;
     QVBoxLayout *m_sidebarFoldersLayout;
     QWidget *m_sidebarFoldersContainer;
     QLabel *m_trackCountLabel;

@@ -73,6 +73,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_folderDetailPage = new FolderDetailPage(m_model, this);
     m_likedPage = new LikedPage(m_model, this);
     m_searchPage = new SearchPage(m_model, this);
+    m_libraryPage = new LibraryPage(m_model, this);
 
     m_stack->addWidget(m_homePage);       // 0
     m_stack->addWidget(m_addPage);        // 1
@@ -101,6 +102,7 @@ MainWindow::MainWindow(QWidget *parent)
     mainLayout->addWidget(m_playerBar);
 
     m_stack->addWidget(m_searchPage);  // 5
+    m_stack->addWidget(m_libraryPage); // 6
 
     // Queue side panel (Spotify-style): lives next to the content, outside
     // the stack, and is toggled by the player bar's queue button. It needs
@@ -228,6 +230,23 @@ MainWindow::MainWindow(QWidget *parent)
         showEditTrackDialog(t);
     });
     connect(m_likedPage, &LikedPage::deleteRequested, this, [this](int id) {
+        if (Track *t = m_model->findTrack(id)) confirmDeleteTrack(*t);
+    });
+
+    // Library page (full, unbounded list — top-level sidebar destination)
+    connect(m_libraryPage, &LibraryPage::playRequested, this, &MainWindow::onTrackPlay);
+    connect(m_libraryPage, &LibraryPage::likeToggled, this, [this](int id) {
+        m_model->toggleLike(id);
+        refreshCurrentPage();
+    });
+    connect(m_libraryPage, &LibraryPage::enqueueRequested, this, [this](const Track &t) {
+        m_playerBar->enqueue(t);
+        showToast(Lang::tr("Adicionado à fila"));
+    });
+    connect(m_libraryPage, &LibraryPage::editTrackRequested, this, [this](const Track &t) {
+        showEditTrackDialog(t);
+    });
+    connect(m_libraryPage, &LibraryPage::deleteRequested, this, [this](int id) {
         if (Track *t = m_model->findTrack(id)) confirmDeleteTrack(*t);
     });
 
@@ -595,14 +614,17 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_navHome    = makeNavBtn(Lang::tr("Início"),    "\uE10F");
     m_navAdd     = makeNavBtn(Lang::tr("Adicionar"), "\uE109");
     m_navFolders = makeNavBtn(Lang::tr("Playlists"), "\uE188");
+    m_navLibrary = makeNavBtn(Lang::tr("Biblioteca Completa"), "\uE142");
 
     connect(m_navHome, &QPushButton::clicked, [this]() { navigateTo("home"); });
     connect(m_navAdd, &QPushButton::clicked, [this]() { navigateTo("add"); });
     connect(m_navFolders, &QPushButton::clicked, [this]() { navigateTo("folders"); });
+    connect(m_navLibrary, &QPushButton::clicked, [this]() { navigateTo("library"); });
 
     navLayout->addWidget(m_navHome);
     navLayout->addWidget(m_navAdd);
     navLayout->addWidget(m_navFolders);
+    navLayout->addWidget(m_navLibrary);
 
     layout->addWidget(navWidget);
 
@@ -726,7 +748,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 }
 
 void MainWindow::updateNavButtons() {
-    for (auto *btn : {m_navHome, m_navAdd, m_navFolders}) {
+    for (auto *btn : {m_navHome, m_navAdd, m_navFolders, m_navLibrary}) {
         const QString icon = btn->property("navIcon").toString();
         const QString text = btn->property("navText").toString();
         btn->setText(m_sidebarCollapsed ? icon : QString("  %1  %2").arg(icon, text));
@@ -1193,6 +1215,7 @@ void MainWindow::navigateTo(const QString &page, const QString &data) {
     lumen::design::StyleSheet::apply(m_navHome, activeStyle(page == "home"));
     lumen::design::StyleSheet::apply(m_navAdd, activeStyle(page == "add"));
     lumen::design::StyleSheet::apply(m_navFolders, activeStyle(page == "folders" || page == "folder"));
+    lumen::design::StyleSheet::apply(m_navLibrary, activeStyle(page == "library"));
 
     if (page == "home") {
         m_stack->setCurrentIndex(0);
@@ -1209,6 +1232,8 @@ void MainWindow::navigateTo(const QString &page, const QString &data) {
         m_stack->setCurrentIndex(4);
     } else if (page == "search") {
         m_stack->setCurrentIndex(5);
+    } else if (page == "library") {
+        m_stack->setCurrentIndex(6);
     }
 
     refreshCurrentPage();
@@ -1229,6 +1254,8 @@ void MainWindow::refreshCurrentPage() {
         m_likedPage->refresh(curId, playing);
     } else if (m_stack->currentIndex() == 5) {
         m_searchPage->refresh(curId, playing);
+    } else if (m_stack->currentIndex() == 6) {
+        m_libraryPage->refresh(curId, playing);
     }
 
     // The queue side panel lives outside the stack; keep it live while open.

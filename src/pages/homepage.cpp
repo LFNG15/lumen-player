@@ -11,12 +11,10 @@
 #include <QLinearGradient>
 #include <QDateTime>
 #include <QFrame>
-#include <QCursor>
 #include <QResizeEvent>
 #include <QFontMetrics>
 #include <QPixmap>
 #include <QListView>
-#include <QShortcut>
 #include <QWheelEvent>
 #include "coverwidget.h"
 
@@ -74,27 +72,18 @@ HomePage::HomePage(TrackModel *model, QWidget *parent)
     contentLayout->addWidget(m_dynamicRegion);
 
     m_playedSection = buildShelf(Lang::tr("Tocadas recentemente"),
-        TrackListModel::Source::RecentlyPlayed, 8, /*allowDelete=*/false,
+        TrackListModel::Source::RecentlyPlayed, 8,
         &m_playedView, &m_playedModel);
     contentLayout->addWidget(m_playedSection);
 
     m_addedSection = buildShelf(Lang::tr("Adicionadas recentemente"),
-        TrackListModel::Source::RecentlyAdded, 8, /*allowDelete=*/false,
+        TrackListModel::Source::RecentlyAdded, 8,
         &m_addedView, &m_addedModel);
     contentLayout->addWidget(m_addedSection);
     contentLayout->addStretch();
 
     m_scroll->setWidget(content);
-    outerLayout->addWidget(m_scroll, 1);
-
-    // ── Bottom region: "Biblioteca Completa" — unbounded, so it keeps its own
-    // independent scroll instead of nesting inside m_scroll. This project
-    // already tried nested scroll areas for the other list pages and rejected
-    // them (double scrollbar) — same reasoning applies here.
-    m_librarySection = buildShelf(Lang::tr("Biblioteca Completa"),
-        TrackListModel::Source::All, 0, /*allowDelete=*/true,
-        &m_libraryView, &m_libraryModel);
-    outerLayout->addWidget(m_librarySection, 1);
+    outerLayout->addWidget(m_scroll);
 }
 
 int HomePage::chipColumnsForWidth(int w) const
@@ -115,8 +104,7 @@ void HomePage::resizeEvent(QResizeEvent *event)
 }
 
 QWidget *HomePage::buildShelf(const QString &labelText, TrackListModel::Source::Kind kind,
-                              int limit, bool allowDelete,
-                              QListView **outView, TrackListModel **outModel)
+                              int limit, QListView **outView, TrackListModel **outModel)
 {
     auto *section = new QWidget();
     lumen::design::StyleSheet::apply(section, "background: transparent;");
@@ -137,7 +125,10 @@ QWidget *HomePage::buildShelf(const QString &labelText, TrackListModel::Source::
     model->setSource(src);
     model->setReorderEnabled(false);
 
-    auto *view = limit > 0 ? new NonScrollingListView(section) : new QListView(section);
+    // Non-scrolling shelf: height follows content (see updateShelfHeight()),
+    // no internal scrollbar, and it shouldn't steal keyboard focus from the
+    // page just for being present.
+    auto *view = new NonScrollingListView(section);
     view->setModel(model);
     view->setUniformItemSizes(true);
     view->setLayoutMode(QListView::Batched);
@@ -148,15 +139,10 @@ QWidget *HomePage::buildShelf(const QString &labelText, TrackListModel::Source::
     view->setFrameShape(QFrame::NoFrame);
     view->setSpacing(2);
     view->setContextMenuPolicy(Qt::CustomContextMenu);
+    view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    view->setFocusPolicy(Qt::NoFocus);
     lumen::design::StyleSheet::apply(view, QStringLiteral(
         "QListView { background: transparent; border: none; outline: none; }"));
-    if (limit > 0) {
-        // Capped shelf: height follows content (see updateShelfHeight()), no
-        // internal scrollbar, and it shouldn't steal keyboard focus from the
-        // page just for being present.
-        view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        view->setFocusPolicy(Qt::NoFocus);
-    }
 
     auto *delegate = new TrackRowDelegate(view);
     view->setItemDelegate(delegate);
@@ -185,41 +171,10 @@ QWidget *HomePage::buildShelf(const QString &labelText, TrackListModel::Source::
             m_ctx->popup(ids, view->viewport()->mapToGlobal(pos));
     });
 
-    // Keyboard shortcuts only on the unbounded (library) list. All three lists
-    // are visible on Home at once — unlike FolderDetailPage/LikedPage/SearchPage,
-    // where only one is ever visible, so Qt's default WindowShortcut context
-    // never has to disambiguate between them. Registering the same Space/L/Q/Menu
-    // shortcuts on all three here would make them ambiguous whenever no view has
-    // focus. The two capped shelves already can't take focus (NoFocus above) —
-    // they're mouse/click only, consistent with being a preview, not a primary list.
-    if (limit == 0) {
-        auto *spaceKey = new QShortcut(Qt::Key_Space, view);
-        connect(spaceKey, &QShortcut::activated, this, [this, model, view]() {
-            const auto ids = selectedIds(view, model);
-            if (ids.isEmpty()) return;
-            if (Track *t = m_model->findTrack(ids.first())) emit playRequested(*t);
-        });
-        auto *likeKey = new QShortcut(Qt::Key_L, view);
-        connect(likeKey, &QShortcut::activated, this, [this, model, view]() {
-            for (int id : selectedIds(view, model)) emit likeToggled(id);
-        });
-        auto *qKey = new QShortcut(Qt::Key_Q, view);
-        connect(qKey, &QShortcut::activated, this, [this, model, view]() {
-            for (int id : selectedIds(view, model))
-                if (Track *t = m_model->findTrack(id)) emit enqueueRequested(*t);
-        });
-        auto *menuKey = new QShortcut(Qt::Key_Menu, view);
-        connect(menuKey, &QShortcut::activated, this, [this, model, view]() {
-            const auto ids = selectedIds(view, model);
-            if (!ids.isEmpty()) m_ctx->popup(ids, QCursor::pos());
-        });
-        if (allowDelete) {
-            auto *delKey = new QShortcut(QKeySequence::Delete, view);
-            connect(delKey, &QShortcut::activated, this, [this, model, view]() {
-                for (int id : selectedIds(view, model)) emit deleteRequested(id);
-            });
-        }
-    }
+    // No keyboard shortcuts here: the shelves can't take focus (NoFocus
+    // above) — they're mouse/click only, consistent with being a preview,
+    // not a primary list. (The primary, keyboard-navigable list is now
+    // LibraryPage, reached from the sidebar — not part of Home anymore.)
 
     sectionLayout->addWidget(view);
 
@@ -319,12 +274,10 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
         m_dynamicLayout->addWidget(emptyWidget);
         m_playedSection->hide();
         m_addedSection->hide();
-        m_librarySection->hide();
         return;
     }
     m_playedSection->show();
     m_addedSection->show();
-    m_librarySection->show();
 
     // ── Folder chips ────────────────────────────────────────
     auto folders = m_model->folders();
@@ -457,9 +410,6 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     m_addedModel->setPlaybackState(currentTrackId, isPlaying);
     updateShelfHeight(m_addedView, m_addedModel);
     m_addedSection->setVisible(m_addedModel->rowCount() > 0);
-
-    m_libraryModel->reload();
-    m_libraryModel->setPlaybackState(currentTrackId, isPlaying);
 }
 
 QWidget *HomePage::createFolderChip(const Folder &folder, int trackCount, int chipWidth) {

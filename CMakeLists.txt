@@ -57,6 +57,7 @@ set(PROJECT_SOURCES
     src/pages/likedpage.cpp
     src/pages/queuepage.cpp
     src/pages/searchpage.cpp
+    src/pages/librarypage.cpp
     src/pages/importplaylistdialog.cpp
     src/player/playerbar.cpp
     src/player/playbackengine.cpp
@@ -91,6 +92,7 @@ set(PROJECT_HEADERS
     src/pages/likedpage.h
     src/pages/queuepage.h
     src/pages/searchpage.h
+    src/pages/librarypage.h
     src/pages/importplaylistdialog.h
     src/player/playerbar.h
     src/player/playbackengine.h

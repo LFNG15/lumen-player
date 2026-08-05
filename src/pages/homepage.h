@@ -29,13 +29,12 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
-    // One QListView+TrackListModel+TrackRowDelegate, wired identically to how
-    // LikedPage/FolderDetailPage/SearchPage already do it. limit > 0 makes a
-    // non-scrolling "shelf" (height follows content, capped item count);
-    // limit == 0 is a normal unbounded, independently-scrolling list.
+    // A non-scrolling "shelf": QListView+TrackListModel+TrackRowDelegate,
+    // wired identically to how LikedPage/FolderDetailPage/SearchPage do it,
+    // capped to `limit` items with height following content (mouse-only,
+    // no keyboard focus — see homepage.cpp).
     QWidget *buildShelf(const QString &labelText, TrackListModel::Source::Kind kind,
-                        int limit, bool allowDelete,
-                        QListView **outView, TrackListModel **outModel);
+                        int limit, QListView **outView, TrackListModel **outModel);
     void updateShelfHeight(QListView *view, TrackListModel *model);
     QList<int> selectedIds(QListView *view, TrackListModel *model) const;
 
@@ -47,8 +46,8 @@ private:
     TrackModel *m_model;
     TrackContextMenu *m_ctx = nullptr;
 
-    // Top region: greeting/chips/"Recentes" strip (dynamic, rebuilt each
-    // refresh()) followed by the two capped shelves (persistent, just reload()).
+    // Greeting/chips/"Recentes" strip (dynamic, rebuilt each refresh())
+    // followed by the two capped shelves (persistent, just reload()).
     QScrollArea *m_scroll = nullptr;
     QWidget *m_dynamicRegion = nullptr;
     QVBoxLayout *m_dynamicLayout = nullptr;
@@ -60,12 +59,6 @@ private:
     QWidget *m_addedSection = nullptr;
     QListView *m_addedView = nullptr;
     TrackListModel *m_addedModel = nullptr;
-
-    // Bottom region: "Biblioteca Completa" — unbounded, own independent scroll
-    // (not nested inside m_scroll — see homepage.cpp for why).
-    QWidget *m_librarySection = nullptr;
-    QListView *m_libraryView = nullptr;
-    TrackListModel *m_libraryModel = nullptr;
 
     int m_lastChipCols = -1;
     int m_lastCurrentId = 0;
