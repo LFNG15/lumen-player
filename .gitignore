@@ -47,7 +47,9 @@ compile_commands.json
 #Task e ContextProject
 ContextProject.md
 Task.md
-
+CLEAN_ARCHITECTURE.md
+CODIGO_LIMPO.md
+REFATORACAO.md
 
 # aqtinstall
 aqtinstall.log
