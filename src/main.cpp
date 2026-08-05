@@ -13,6 +13,13 @@
 #include <QEvent>
 #include <cstdio>
 
+#if defined(Q_OS_WIN)
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
+
 #include "mainwindow.h"
 #include "theme.h"
 #include "lang.h"
@@ -155,14 +162,24 @@ int main(int argc, char *argv[])
     themeMgr.loadFromSettings();
 
     if (parser.isSet(canaryOpt)) {
+        // WIN32 GUI subsystem has no console; attach so CI/scripts see diagnostics.
+#if defined(Q_OS_WIN)
+        if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole()) {
+            FILE *fp = nullptr;
+            freopen_s(&fp, "CONOUT$", "w", stdout);
+            freopen_s(&fp, "CONOUT$", "w", stderr);
+        }
+#endif
         langMgr.setLang(QStringLiteral("en"));
         const QString key = QStringLiteral("Músicas");
         const QString out = Lang::tr(key);
         if (out == key) {
             qCritical() << "I18N CANARY FAILED";
+            std::fprintf(stderr, "I18N CANARY FAILED: Lang::tr(\"Musicas\") unchanged under en\n");
             return 1;
         }
         qInfo() << "I18N canary OK:" << key << "->" << out;
+        std::fprintf(stdout, "I18N canary OK\n");
         return 0;
     }
 

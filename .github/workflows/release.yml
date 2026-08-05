@@ -66,9 +66,23 @@ jobs:
       - name: Smoke — i18n canary on installed tree
         shell: pwsh
         run: |
-          $exe = "dist/LumenMusic/LumenMusic.exe"
-          & $exe --i18n-canary
-          if ($LASTEXITCODE -ne 0) { throw "i18n canary failed on installed tree" }
+          # GUI subsystem (WIN32_EXECUTABLE): PowerShell's & does not set
+          # $LASTEXITCODE (stays $null → `$null -ne 0` is true → false fail).
+          # CI "passed" only because leftover code from windeployqt was 0.
+          $exe = (Resolve-Path "dist/LumenMusic/LumenMusic.exe").Path
+          $dir = Split-Path $exe -Parent
+          if (-not (Test-Path (Join-Path $dir "platforms/qwindows.dll"))) {
+            throw "platforms/qwindows.dll missing next to installed exe (deploy broken)"
+          }
+          # Test the installed tree only — do not inherit aqt's QT_PLUGIN_PATH.
+          Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
+          $p = Start-Process -FilePath $exe -ArgumentList "--i18n-canary" `
+            -WorkingDirectory $dir -Wait -PassThru -NoNewWindow
+          Write-Host "i18n canary ExitCode=$($p.ExitCode)"
+          if ($p.ExitCode -ne 0) {
+            throw "i18n canary failed on installed tree (exit $($p.ExitCode))"
+          }
 
       # Optional: --selftest when a short fixture is present in the repo.
       # - name: Smoke — selftest
