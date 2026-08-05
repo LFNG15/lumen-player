@@ -164,7 +164,7 @@ MainWindow::MainWindow(QWidget *parent)
         refreshCurrentPage();
         refreshSidebarFolders();
     });
-    connect(m_addPage, &AddMusicPage::navigateBack, this, [this]() { navigateTo("home"); });
+    connect(m_addPage, &AddMusicPage::navigateBack, this, &MainWindow::navigateBack);
 
     // Folders page
     connect(m_foldersPage, &FoldersPage::folderSelected, this, [this](const QString &name) {
@@ -183,7 +183,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_folderDetailPage, &FolderDetailPage::editTrackRequested, this, [this](const Track &t) {
         showEditTrackDialog(t);
     });
-    connect(m_folderDetailPage, &FolderDetailPage::navigateBack, this, [this]() { navigateTo("folders"); });
+    connect(m_folderDetailPage, &FolderDetailPage::navigateBack, this, &MainWindow::navigateBack);
     connect(m_folderDetailPage, &FolderDetailPage::enqueueRequested, this, [this](const Track &t) {
         m_playerBar->enqueue(t);
         showToast(Lang::tr("Adicionado à fila"));
@@ -218,7 +218,7 @@ MainWindow::MainWindow(QWidget *parent)
         m_model->toggleLike(id);
         refreshCurrentPage();
     });
-    connect(m_likedPage, &LikedPage::navigateBack, this, [this]() { navigateTo("home"); });
+    connect(m_likedPage, &LikedPage::navigateBack, this, &MainWindow::navigateBack);
     connect(m_likedPage, &LikedPage::navigateToFolder, this, [this](const QString &name) {
         navigateTo("folder", name);
     });
@@ -1183,7 +1183,21 @@ void MainWindow::resizeEvent(QResizeEvent *event) {
 }
 
 void MainWindow::navigateTo(const QString &page, const QString &data) {
+    // Record real history: push where we're leaving FROM, so navigateBack()
+    // can return to whatever the user actually came from — not a fixed
+    // per-button destination. Skip when this call is itself a back-navigation
+    // (already popped, don't re-push), on the very first navigation (nothing
+    // to go back to yet), or when it's a same-destination refresh (some
+    // callers re-invoke navigateTo(m_currentPage, ...) just to redraw, e.g.
+    // after collapsing the sidebar — data is only meaningful for "folder").
+    const bool sameDestination = (page == m_currentPage)
+        && (page != QStringLiteral("folder") || data == m_currentPageData);
+    if (!m_navigatingBack && !m_currentPage.isEmpty() && !sameDestination)
+        m_navHistory.append(qMakePair(m_currentPage, m_currentPageData));
+    m_navigatingBack = false;
+
     m_currentPage = page;
+    m_currentPageData = data;
 
     // Nav chrome: idle = soft text; hover/active = solid accent + onAccent (white).
     auto activeStyle = [this](bool active) {
@@ -1238,6 +1252,16 @@ void MainWindow::navigateTo(const QString &page, const QString &data) {
 
     refreshCurrentPage();
     refreshSidebarFolders();
+}
+
+void MainWindow::navigateBack() {
+    if (m_navHistory.isEmpty()) {
+        navigateTo(QStringLiteral("home"));
+        return;
+    }
+    const auto prev = m_navHistory.takeLast();
+    m_navigatingBack = true;
+    navigateTo(prev.first, prev.second);
 }
 
 void MainWindow::refreshCurrentPage() {

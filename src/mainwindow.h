@@ -7,6 +7,8 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QTimer>
+#include <QPair>
+#include <QList>
 #include "trackmodel.h"
 #include "playerbar.h"
 #include "playbackengine.h"
@@ -39,6 +41,7 @@ protected:
 
 private slots:
     void navigateTo(const QString &page, const QString &data = "");
+    void navigateBack();
     void refreshCurrentPage();
     void onTrackPlay(const Track &track);
     void showThemePicker();
@@ -106,6 +109,13 @@ private:
     bool m_sidebarCollapsed = false;
 
     QString m_currentPage;
+    QString m_currentPageData;
+    // Real navigation history (not a fixed "back always goes here" per page)
+    // — each entry is the (page, data) the user was actually on before the
+    // navigation that replaced it. navigateBack() pops the top and returns
+    // there, whatever it was.
+    QList<QPair<QString, QString>> m_navHistory;
+    bool m_navigatingBack = false;
 
     QLabel *m_toast = nullptr;
     QTimer *m_toastTimer = nullptr;
