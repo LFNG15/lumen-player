@@ -190,11 +190,26 @@ void HomePage::updateShelfHeight(QListView *view, TrackListModel *model)
         view->setFixedHeight(0);
         return;
     }
+
+    // Ask Qt for the last row's actual laid-out geometry instead of guessing
+    // at spacing/margin math — a hand-derived rows*rowHeight+(rows-1)*spacing
+    // formula under-counted by roughly half a row in practice (last row's
+    // artist line got clipped), because it didn't account for the view's own
+    // top/bottom content margins. visualRect() reflects Qt's real layout even
+    // for a row currently outside the widget's own (too-short) fixed height,
+    // since uniform item sizes let it compute geometry without a paint pass.
+    const QRect lastRow = view->visualRect(model->index(rows - 1, 0));
+    if (lastRow.height() > 0) {
+        view->setFixedHeight(lastRow.bottom() + 1);
+        return;
+    }
+
+    // Fallback for the rare case visualRect() isn't ready yet (e.g. called
+    // before the view has ever laid out): the old estimate, padded generously
+    // so under-shooting (clipping) is less likely than over-shooting (a
+    // little extra blank space).
     const int rh = lumen::design::ThemeManager::m().rowHeight;
-    // Estimate: no existing precedent in this codebase for a content-sized,
-    // non-scrolling QListView — visually confirm against live rowHeight/
-    // density changes rather than trusting this formula to be pixel-exact.
-    view->setFixedHeight(rows * rh + (rows - 1) * view->spacing());
+    view->setFixedHeight(rows * rh + qMax(0, rows - 1) * view->spacing() + rh);
 }
 
 QList<int> HomePage::selectedIds(QListView *view, TrackListModel *model) const
