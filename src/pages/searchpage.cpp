@@ -158,7 +158,6 @@ void SearchPage::applyQuery()
 {
     const QString needle = TextUtils::normalized(m_query);
 
-    // Clear playlist chips.
     if (QLayout *lay = m_playlistHits->layout()) {
         QLayoutItem *it;
         while ((it = lay->takeAt(0)) != nullptr) {

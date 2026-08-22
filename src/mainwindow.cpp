@@ -839,7 +839,6 @@ void MainWindow::applySidebarCollapsed(bool collapsed, bool save) {
 }
 
 void MainWindow::refreshSidebarFolders() {
-    // Clear
     QLayoutItem *item;
     while ((item = m_sidebarFoldersLayout->takeAt(0)) != nullptr) {
         if (item->widget()) item->widget()->deleteLater();

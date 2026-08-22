@@ -448,7 +448,6 @@ void AddMusicPage::processFiles(const QStringList &paths) {
 }
 
 void AddMusicPage::refreshFileList() {
-    // Clear list
     QLayoutItem *item;
     while ((item = m_fileListLayout->takeAt(0)) != nullptr) {
         if (item->widget()) item->widget()->deleteLater();
@@ -587,7 +586,7 @@ QString AddMusicPage::downloadDir() const {
 void AddMusicPage::chooseDownloadFolder() {
     QString dir = QFileDialog::getExistingDirectory(
         this, Lang::tr("Escolher pasta de downloads"), downloadDir());
-    if (dir.isEmpty()) return;            // user cancelled
+    if (dir.isEmpty()) return;
     QSettings().setValue("downloadDir", dir);
     updateDownloadFolderLabel();
 }
