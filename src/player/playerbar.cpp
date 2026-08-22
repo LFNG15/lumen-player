@@ -8,6 +8,7 @@
 #include <QResizeEvent>
 #include <QSizePolicy>
 #include <QFontMetrics>
+#include <QSignalBlocker>
 
 PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     : QWidget(parent)
@@ -193,8 +194,15 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     connect(m_volIcon, &QPushButton::clicked, this, [this]() {
         m_engine->setMuted(!m_engine->isMuted());
     });
-    connect(m_volumeSlider, &QSlider::sliderMoved, this, [this](int val) {
-        m_engine->setVolume(val / 100.0);
+    // valueChanged (not sliderMoved): mouse wheel and keyboard also persist.
+    // ClickableSlider still re-emits sliderMoved on click, but that would miss
+    // wheel/arrow changes. Do not connect the progress slider this way — it
+    // would seek in a loop when positionChanged writes the slider.
+    connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int val) {
+        const double v = val / 100.0;
+        if (qAbs(m_engine->volume() - v) < 0.005)
+            return;
+        m_engine->setVolume(v);
         if (m_engine->isMuted())
             m_engine->setMuted(false);
     });
@@ -240,6 +248,7 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
             m_repeatBtn->setToolTip(Lang::tr("Repetir"));
     });
     connect(m_engine, &PlaybackEngine::volumeChanged, this, [this](double v) {
+        const QSignalBlocker blocker(m_volumeSlider);
         m_volumeSlider->setValue(static_cast<int>(v * 100));
         updateVolIcon();
     });
