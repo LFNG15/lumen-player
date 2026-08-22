@@ -40,13 +40,18 @@ LibraryPage::LibraryPage(TrackModel *model, QWidget *parent)
     connect(backBtn, &QPushButton::clicked, this, &LibraryPage::navigateBack);
     headerLayout->addWidget(backBtn, 0, Qt::AlignLeft);
 
-    auto *title = new QLabel(Lang::tr("Biblioteca Completa"), m_header);
+    auto *title = new QLabel(m_header);
+    Lang::bindText(title, QStringLiteral("Biblioteca Completa"));
     title->setFont(Theme::titleFont(28));
     lumen::design::StyleSheet::apply(title, QString(
         "color: %1; background: transparent;").arg(Theme::text().name()));
     headerLayout->addWidget(title);
 
     m_countLabel = new QLabel(m_header);
+    Lang::bind(m_countLabel, [this]() {
+        const int n = m_listModel ? m_listModel->rowCount() : 0;
+        m_countLabel->setText(QString(Lang::tr("%1 faixa%2")).arg(n).arg(n != 1 ? "s" : ""));
+    });
     m_countLabel->setFont(Theme::bodyFont(12));
     lumen::design::StyleSheet::apply(m_countLabel, QString(
         "color: %1; background: transparent;").arg(Theme::textSoft().name()));

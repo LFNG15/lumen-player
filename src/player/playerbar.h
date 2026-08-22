@@ -73,6 +73,8 @@ private:
     QPushButton *m_repeatBtn = nullptr;
     QPushButton *m_queueBtn = nullptr;
     QPushButton *m_likeBtn  = nullptr;
+    bool m_likeHasTrack = false;
+    bool m_liked = false;
 
     ClickableSlider *m_progressSlider = nullptr;
     ClickableSlider *m_volumeSlider = nullptr;

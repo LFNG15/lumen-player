@@ -541,7 +541,7 @@ QWidget *MainWindow::buildTopBar() {
     pillLayout->addWidget(searchIcon);
 
     m_searchEdit = new QLineEdit();
-    m_searchEdit->setPlaceholderText(Lang::tr("O que você quer ouvir?"));
+    Lang::bindPlaceholder(m_searchEdit, QStringLiteral("O que você quer ouvir?"));
     m_searchEdit->setFont(Theme::bodyFont(12));
     m_searchEdit->setClearButtonEnabled(true);
     lumen::design::StyleSheet::apply(m_searchEdit, QString(
@@ -609,6 +609,10 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     connect(m_collapseBtn, &QPushButton::clicked, this, [this]() {
         applySidebarCollapsed(!m_sidebarCollapsed);
     });
+    Lang::bind(m_collapseBtn, [this]() {
+        m_collapseBtn->setToolTip(m_sidebarCollapsed ? Lang::tr("Expandir menu")
+                                                     : Lang::tr("Recolher menu"));
+    });
     m_logoLayout->addWidget(m_collapseBtn);
 
     layout->addWidget(logoWidget);
@@ -638,10 +642,20 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         return btn;
     };
 
-    m_navHome    = makeNavBtn(Lang::tr("Início"),    "\uE10F");
-    m_navAdd     = makeNavBtn(Lang::tr("Adicionar"), "\uE109");
-    m_navFolders = makeNavBtn(Lang::tr("Playlists"), "\uE188");
-    m_navLibrary = makeNavBtn(Lang::tr("Biblioteca Completa"), "\uE142");
+    m_navHome    = makeNavBtn(QStringLiteral("Início"),    "\uE10F");
+    m_navAdd     = makeNavBtn(QStringLiteral("Adicionar"), "\uE109");
+    m_navFolders = makeNavBtn(QStringLiteral("Playlists"), "\uE188");
+    m_navLibrary = makeNavBtn(QStringLiteral("Biblioteca Completa"), "\uE142");
+    auto bindNav = [this](QPushButton *btn, const QString &ptKey) {
+        Lang::bind(btn, [this, btn, ptKey]() {
+            btn->setProperty("navText", Lang::tr(ptKey));
+            updateNavButtons();
+        });
+    };
+    bindNav(m_navHome, QStringLiteral("Início"));
+    bindNav(m_navAdd, QStringLiteral("Adicionar"));
+    bindNav(m_navFolders, QStringLiteral("Playlists"));
+    bindNav(m_navLibrary, QStringLiteral("Biblioteca Completa"));
 
     connect(m_navHome, &QPushButton::clicked, [this]() { navigateTo("home"); });
     connect(m_navAdd, &QPushButton::clicked, [this]() { navigateTo("add"); });
@@ -663,7 +677,8 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     headerLayout->setContentsMargins(20, 16, 14, 4);
     headerLayout->setSpacing(2);
 
-    m_foldersHeader = new QLabel(Lang::tr("SUAS PLAYLISTS"));
+    m_foldersHeader = new QLabel();
+    Lang::bindText(m_foldersHeader, QStringLiteral("SUAS PLAYLISTS"));
     m_foldersHeader->setFont(Theme::bodyFont(10));
     lumen::design::StyleSheet::apply(m_foldersHeader, QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;")
         .arg(Theme::textMuted().name()));
@@ -683,11 +698,13 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
         return btn;
     };
 
-    m_sidebarSearchBtn = makeHeaderBtn("", Lang::tr("Buscar playlists"));
+    m_sidebarSearchBtn = makeHeaderBtn("", QString());
+    Lang::bindToolTip(m_sidebarSearchBtn, QStringLiteral("Buscar playlists"));
     connect(m_sidebarSearchBtn, &QPushButton::clicked, this, &MainWindow::toggleSidebarSearch);
     headerLayout->addWidget(m_sidebarSearchBtn);
 
-    auto *sortBtn = makeHeaderBtn("", Lang::tr("Ordenar e exibir"));
+    auto *sortBtn = makeHeaderBtn("", QString());
+    Lang::bindToolTip(sortBtn, QStringLiteral("Ordenar e exibir"));
     connect(sortBtn, &QPushButton::clicked, this, &MainWindow::showSidebarSortMenu);
     headerLayout->addWidget(sortBtn);
 
@@ -695,7 +712,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
 
     // Inline playlist search, hidden until the magnifier is clicked.
     m_sidebarSearchEdit = new QLineEdit();
-    m_sidebarSearchEdit->setPlaceholderText(Lang::tr("Buscar playlists"));
+    Lang::bindPlaceholder(m_sidebarSearchEdit, QStringLiteral("Buscar playlists"));
     m_sidebarSearchEdit->setFont(Theme::bodyFont(11));
     m_sidebarSearchEdit->setClearButtonEnabled(true);
     m_sidebarSearchEdit->setFixedHeight(30);
@@ -739,9 +756,13 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     footerLayout->setContentsMargins(20, 8, 12, 12);
     footerLayout->setSpacing(4);
 
-    m_trackCountLabel = new QLabel(QString(Lang::tr("%1 faixa%2 na biblioteca"))
-        .arg(m_model->tracks().size())
-        .arg(m_model->tracks().size() != 1 ? "s" : ""));
+    m_trackCountLabel = new QLabel();
+    auto updateTrackCount = [this]() {
+        m_trackCountLabel->setText(QString(Lang::tr("%1 faixa%2 na biblioteca"))
+            .arg(m_model->tracks().size())
+            .arg(m_model->tracks().size() != 1 ? "s" : ""));
+    };
+    Lang::bind(m_trackCountLabel, updateTrackCount);
     m_trackCountLabel->setFont(Theme::bodyFont(10));
     m_trackCountLabel->setMinimumWidth(0); // never force the lang/theme buttons out of view
     lumen::design::StyleSheet::apply(m_trackCountLabel, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
@@ -751,7 +772,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     m_langBtn->setFixedSize(28, 28);
     m_langBtn->setCursor(Qt::PointingHandCursor);
     m_langBtn->setFont(Theme::bodyFont(9));
-    m_langBtn->setToolTip(Lang::tr("Idioma"));
+    Lang::bindToolTip(m_langBtn, QStringLiteral("Idioma"));
     lumen::design::StyleSheet::apply(m_langBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; font-weight: bold; }"
         "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
@@ -763,7 +784,7 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     themeBtn->setFixedSize(28, 28);
     themeBtn->setCursor(Qt::PointingHandCursor);
     themeBtn->setFont(Theme::iconFont(12));
-    themeBtn->setToolTip(Lang::tr("Escolher tema"));
+    Lang::bindToolTip(themeBtn, QStringLiteral("Escolher tema"));
     lumen::design::StyleSheet::apply(themeBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; }"
         "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"

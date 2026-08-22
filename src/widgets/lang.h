@@ -8,6 +8,12 @@
 #include "design/i18n.h"
 
 #include <QString>
+#include <functional>
+
+class QLabel;
+class QAbstractButton;
+class QLineEdit;
+class QWidget;
 
 namespace Lang {
 
@@ -33,6 +39,27 @@ inline bool isEnglish()
 inline QString tr(const QString &pt)
 {
     return lumen::design::LanguageManager::instance().tr(pt);
+}
+
+inline void bindText(QLabel *w, const QString &pt)
+{
+    lumen::design::LanguageManager::instance().bindText(w, pt);
+}
+inline void bindText(QAbstractButton *w, const QString &pt)
+{
+    lumen::design::LanguageManager::instance().bindText(w, pt);
+}
+inline void bindPlaceholder(QLineEdit *w, const QString &pt)
+{
+    lumen::design::LanguageManager::instance().bindPlaceholder(w, pt);
+}
+inline void bindToolTip(QWidget *w, const QString &pt)
+{
+    lumen::design::LanguageManager::instance().bindToolTip(w, pt);
+}
+inline void bind(QObject *owner, std::function<void()> reapply)
+{
+    lumen::design::LanguageManager::instance().bind(owner, std::move(reapply));
 }
 
 } // namespace Lang

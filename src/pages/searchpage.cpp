@@ -133,6 +133,7 @@ void SearchPage::refresh(int currentTrackId, bool isPlaying)
     // Keep current filter; only refresh data.
     m_listModel->reload();
     m_proxy->setNeedle(TextUtils::normalized(m_query));
+    applyQuery();
 }
 
 QList<int> SearchPage::selectedIds() const

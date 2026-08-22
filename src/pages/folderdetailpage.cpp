@@ -335,7 +335,7 @@ void FolderDetailPage::setupHeaderUi()
     m_editBtn->setFixedSize(36, 36);
     m_editBtn->setCursor(Qt::PointingHandCursor);
     m_editBtn->setFont(Theme::iconFont(12));
-    m_editBtn->setToolTip(Lang::tr("Editar playlist"));
+    Lang::bindToolTip(m_editBtn, QStringLiteral("Editar playlist"));
     lumen::design::StyleSheet::apply(m_editBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; }"
         "QPushButton:hover { color: %3; border-color: %3; }"
@@ -361,7 +361,7 @@ void FolderDetailPage::setupHeaderUi()
     controls->addWidget(m_playBtn);
 
     m_searchEdit = new QLineEdit(m_header);
-    m_searchEdit->setPlaceholderText(Lang::tr("Buscar na playlist"));
+    Lang::bindPlaceholder(m_searchEdit, QStringLiteral("Buscar na playlist"));
     m_searchEdit->setFont(Theme::bodyFont(12));
     m_searchEdit->setFixedHeight(36);
     m_searchEdit->setClearButtonEnabled(true);
@@ -377,7 +377,7 @@ void FolderDetailPage::setupHeaderUi()
     sortBtn->setFixedSize(36, 36);
     sortBtn->setCursor(Qt::PointingHandCursor);
     sortBtn->setFont(Theme::iconFont(12));
-    sortBtn->setToolTip(Lang::tr("Ordenar"));
+    Lang::bindToolTip(sortBtn, QStringLiteral("Ordenar"));
     lumen::design::StyleSheet::apply(sortBtn, QString(
         "QPushButton { background: transparent; color: %1; border: 1px solid %2; border-radius: 18px; }"
         "QPushButton:hover { color: %3; }"

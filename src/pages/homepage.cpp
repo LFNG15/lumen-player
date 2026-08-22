@@ -73,12 +73,12 @@ HomePage::HomePage(TrackModel *model, QWidget *parent)
     m_dynamicLayout->setSpacing(12);
     contentLayout->addWidget(m_dynamicRegion);
 
-    m_playedSection = buildShelf(Lang::tr("Tocadas recentemente"),
+    m_playedSection = buildShelf(QStringLiteral("Tocadas recentemente"),
         TrackListModel::Source::RecentlyPlayed, 8,
         &m_playedView, &m_playedModel);
     contentLayout->addWidget(m_playedSection);
 
-    m_addedSection = buildShelf(Lang::tr("Adicionadas recentemente"),
+    m_addedSection = buildShelf(QStringLiteral("Adicionadas recentemente"),
         TrackListModel::Source::RecentlyAdded, 8,
         &m_addedView, &m_addedModel);
     contentLayout->addWidget(m_addedSection);
@@ -114,7 +114,8 @@ QWidget *HomePage::buildShelf(const QString &labelText, TrackListModel::Source::
     sectionLayout->setContentsMargins(0, 0, 0, 0);
     sectionLayout->setSpacing(4);
 
-    auto *label = new QLabel(labelText, section);
+    auto *label = new QLabel(section);
+    Lang::bindText(label, labelText);
     label->setFont(Theme::titleFont(18));
     lumen::design::StyleSheet::apply(label, QString(
         "color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
