@@ -261,13 +261,7 @@ void PlaybackEngine::prev()
     if (idx < 0) idx = m_contextIndex; // currently on a manual-queue track — resume from there
     if (idx < 0) return;
 
-    int prevIdx;
-    if (m_shuffle) {
-        // Walk the bag backwards when possible; otherwise previous linear.
-        prevIdx = (idx - 1 + queue.size()) % queue.size();
-    } else {
-        prevIdx = (idx - 1 + queue.size()) % queue.size();
-    }
+    const int prevIdx = (idx - 1 + queue.size()) % queue.size();
     loadAndPlay(queue[prevIdx]);
 }
 
