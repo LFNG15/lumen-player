@@ -172,6 +172,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_foldersPage, &FoldersPage::folderSelected, this, [this](const QString &name) {
         navigateTo("folder", name);
     });
+    connect(m_foldersPage, &FoldersPage::navigateBack, this, &MainWindow::navigateBack);
 
     // Folder detail
     connect(m_folderDetailPage, &FolderDetailPage::playRequested, this, &MainWindow::onTrackPlay);
@@ -251,6 +252,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_libraryPage, &LibraryPage::deleteRequested, this, [this](int id) {
         if (Track *t = m_model->findTrack(id)) confirmDeleteTrack(*t);
     });
+    connect(m_libraryPage, &LibraryPage::navigateBack, this, &MainWindow::navigateBack);
 
     // Queue page
     connect(m_queuePage, &QueuePage::playContext, this, [this](const Track &t) {
@@ -298,6 +300,22 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_playerBar, &PlayerBar::queueChanged, this, [this]() { refreshCurrentPage(); });
     connect(m_engine, &PlaybackEngine::playbackError, this, [this](const QString &msg) {
         showToast(Lang::tr(msg));
+    });
+    auto syncPlayerLike = [this]() {
+        const int id = m_engine->currentTrackId();
+        if (id == 0) {
+            m_playerBar->setLikedState(false, false);
+            return;
+        }
+        const Track *t = m_model->findTrack(id);
+        m_playerBar->setLikedState(true, t && t->liked);
+    };
+    connect(m_engine, &PlaybackEngine::trackChanged, this, [syncPlayerLike](int) { syncPlayerLike(); });
+    connect(m_model, &TrackModel::tracksChanged, this, syncPlayerLike);
+    connect(m_playerBar, &PlayerBar::likeClicked, this, [this]() {
+        const int id = m_engine->currentTrackId();
+        if (id != 0)
+            m_model->toggleLike(id);
     });
 
     // Model changes — keep the count label, the visible page, and the sidebar
@@ -1028,7 +1046,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     int id = track.id;
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(Lang::tr("Editar Música"));
-    dlg->setFixedSize(380, 200);
+    dlg->setMinimumWidth(380);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
@@ -1039,8 +1057,8 @@ void MainWindow::showEditTrackDialog(const Track &track) {
           Theme::border().name(), Theme::accent().name()));
 
     auto *layout = new QVBoxLayout(dlg);
-    layout->setContentsMargins(20, 20, 20, 20);
-    layout->setSpacing(10);
+    layout->setContentsMargins(24, 24, 24, 24);
+    layout->setSpacing(12);
 
     auto *titleLabel = new QLabel(Lang::tr("Nome da música"));
     titleLabel->setFont(Theme::bodyFont(12));
@@ -1087,6 +1105,7 @@ void MainWindow::showEditTrackDialog(const Track &track) {
     layout->addLayout(btnRow);
 
     connect(artistEdit, &QLineEdit::returnPressed, saveBtn, &QPushButton::click);
+    dlg->adjustSize();
     dlg->exec();
 }
 
