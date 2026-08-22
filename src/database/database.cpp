@@ -898,6 +898,11 @@ namespace {
 
 QString joinIds(const QList<int> &ids)
 {
+    // QStringList::join on an empty list returns a *null* QString, which Qt
+    // binds as SQL NULL and trips the NOT NULL columns — the whole UPDATE
+    // then fails and volume/track/queue are all lost (#20, #21).
+    if (ids.isEmpty())
+        return QStringLiteral("");
     QStringList parts;
     parts.reserve(ids.size());
     for (int id : ids)
@@ -965,7 +970,8 @@ void Database::saveState(const PlaybackState &s)
     q.addBindValue(joinIds(s.contextIds));
     q.addBindValue(joinIds(s.userQueueIds));
     q.addBindValue(s.contextIndex);
-    q.addBindValue(s.contextName);
+    // Null QString binds as SQL NULL; column is NOT NULL DEFAULT ''.
+    q.addBindValue(s.contextName.isNull() ? QStringLiteral("") : s.contextName);
     if (!q.exec())
         qWarning() << "saveState failed:" << q.lastError().text();
 }

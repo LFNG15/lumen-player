@@ -352,4 +352,16 @@ if(LUMEN_BUILD_TESTS)
         src/design/stylesheet.cpp
         src/design/paint.cpp)
     target_link_libraries(test_database_playlist PRIVATE Qt6::Network)
+
+    lumen_add_test(test_playback_state
+        tests/test_playback_state.cpp
+        src/database/database.cpp
+        src/database/migrator.cpp
+        src/player/trackmodel.cpp
+        src/design/tokens.cpp
+        src/design/palettes.cpp
+        src/design/thememanager.cpp
+        src/design/stylesheet.cpp
+        src/design/paint.cpp)
+    target_link_libraries(test_playback_state PRIVATE Qt6::Network)
 endif()
