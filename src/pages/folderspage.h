@@ -15,6 +15,7 @@ public:
 
 signals:
     void folderSelected(const QString &folderName);
+    void navigateBack();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

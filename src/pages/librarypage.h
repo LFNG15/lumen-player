@@ -12,8 +12,6 @@ class TrackContextMenu;
 
 // Top-level sidebar destination — the full, unbounded library as its own
 // page (previously the "Biblioteca Completa" section embedded in HomePage).
-// No back button: reached directly from the sidebar nav, same family as
-// FoldersPage, not a drill-down page like FolderDetailPage/LikedPage.
 class LibraryPage : public QWidget {
     Q_OBJECT
 public:
@@ -26,6 +24,7 @@ signals:
     void enqueueRequested(const Track &track);
     void editTrackRequested(const Track &track);
     void deleteRequested(int id);
+    void navigateBack();
 
 private:
     void showContext(const QPoint &globalPos);

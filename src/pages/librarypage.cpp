@@ -2,11 +2,13 @@
 #include "lang.h"
 #include "theme.h"
 #include "design/stylesheet.h"
+#include "design/icons.h"
 #include "models/tracklistmodel.h"
 #include "models/trackrowdelegate.h"
 #include "models/trackcontextmenu.h"
 
 #include <QLabel>
+#include <QPushButton>
 #include <QVBoxLayout>
 #include <QListView>
 #include <QShortcut>
@@ -26,6 +28,17 @@ LibraryPage::LibraryPage(TrackModel *model, QWidget *parent)
     auto *headerLayout = new QVBoxLayout(m_header);
     headerLayout->setContentsMargins(32, 28, 32, 12);
     headerLayout->setSpacing(4);
+
+    auto *backBtn = new QPushButton(lumen::design::Icons::back(), m_header);
+    backBtn->setFixedSize(34, 34);
+    backBtn->setCursor(Qt::PointingHandCursor);
+    backBtn->setFont(Theme::iconFont(12));
+    lumen::design::StyleSheet::apply(backBtn, QString(
+        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.1) + "; }"
+    ).arg(Theme::text().name()));
+    connect(backBtn, &QPushButton::clicked, this, &LibraryPage::navigateBack);
+    headerLayout->addWidget(backBtn, 0, Qt::AlignLeft);
 
     auto *title = new QLabel(Lang::tr("Biblioteca Completa"), m_header);
     title->setFont(Theme::titleFont(28));

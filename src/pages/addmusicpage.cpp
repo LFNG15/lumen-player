@@ -1,4 +1,5 @@
 #include "design/stylesheet.h"
+#include "design/icons.h"
 #include "addmusicpage.h"
 #include "database.h"
 #include "tools/ytdlp_bootstrap.h"
@@ -46,11 +47,12 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     layout->setContentsMargins(32, 28, 32, 28);
     layout->setSpacing(12);
 
-    auto *backBtn = new QPushButton("←");
+    auto *backBtn = new QPushButton(lumen::design::Icons::back());
     backBtn->setFixedSize(34, 34);
     backBtn->setCursor(Qt::PointingHandCursor);
+    backBtn->setFont(Theme::iconFont(12));
     lumen::design::StyleSheet::apply(backBtn, QString(
-        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; font-size: 16px; }"
+        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; }"
         "QPushButton:hover { background: " + Theme::hoverBg(0.1) + "; }"
     ).arg(Theme::text().name()));
     connect(backBtn, &QPushButton::clicked, this, &AddMusicPage::navigateBack);
