@@ -94,8 +94,8 @@ QList<PaletteDef> allPalettes()
                      c("#eef3f6"), c("#93a1ad"), c("#5a6670"), c("#263240"),
                      c("#ff5722"), c("#ff4d4d"), c("#050506")),
             // Light: cool paper + coral accent (not washed-out orange-on-white)
-            makeLight(c("#f0f4f7"), c("#e4ebf0"), c("#ffffff"), c("#dfe8ee"), c("#ffffff"),
-                      c("#0f1720"), c("#3d4d5c"), c("#5c6b78"), c("#b8c6d1"),
+            makeLight(c("#f0f4f7"), c("#dce4ea"), c("#ffffff"), c("#d0dce6"), c("#ffffff"),
+                      c("#0f1720"), c("#3d4d5c"), c("#5c6b78"), c("#9aafbd"),
                       c("#e64a19"), c("#c62828"), c("#1a1a1a")),
         },
         {

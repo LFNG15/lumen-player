@@ -98,10 +98,15 @@ inline bool isLightMode()
         == lumen::design::Mode::Light;
 }
 
+inline bool isLightSurface()
+{
+    return lumen::design::ThemeManager::c().app.lightness() > 128;
+}
+
 // Mode-aware wash for hover/press on surfaces (white wash fails on light UI).
 inline QString hoverBg(double alpha = 0.06)
 {
-    if (isLightMode())
+    if (isLightSurface())
         return QStringLiteral("rgba(0,0,0,%1)").arg(alpha);
     return QStringLiteral("rgba(255,255,255,%1)").arg(alpha);
 }
@@ -109,7 +114,7 @@ inline QString hoverBg(double alpha = 0.06)
 // Accent button hover: deepen on light, lift on dark.
 inline QColor accentHover()
 {
-    return isLightMode() ? accent().darker(112) : accent().lighter(110);
+    return isLightSurface() ? accent().darker(112) : accent().lighter(110);
 }
 
 inline QString accentRgba(double alpha)

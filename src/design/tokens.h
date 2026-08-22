@@ -80,7 +80,10 @@ struct Tokens {
 Colors deriveHighContrast(const Colors &base);
 
 // Build full token set for a palette × mode × density combination.
-Tokens buildTokens(const QString &paletteId, Mode mode, Density density);
+// hcFromLight: when mode is HighContrast, derive from the light (true) or
+// dark (false) base of the palette — the mode the user was in before HC.
+Tokens buildTokens(const QString &paletteId, Mode mode, Density density,
+                   bool hcFromLight = false);
 
 } // namespace lumen::design
 

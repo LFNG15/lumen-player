@@ -17,7 +17,7 @@ ThemeManager &ThemeManager::instance()
 ThemeManager::ThemeManager(QObject *parent)
     : QObject(parent)
 {
-    m_tokens = buildTokens(m_paletteId, m_mode, m_density);
+    m_tokens = buildTokens(m_paletteId, m_mode, m_density, m_hcFromLight);
 }
 
 void ThemeManager::loadFromSettings()
@@ -31,6 +31,7 @@ void ThemeManager::loadFromSettings()
         m_mode = Mode::HighContrast;
     else
         m_mode = Mode::Dark;
+    m_hcFromLight = s.value(QStringLiteral("themeHcFromLight"), false).toBool();
 
     const QString densStr = s.value(QStringLiteral("themeDensity"), QStringLiteral("comfortable")).toString();
     m_density = (densStr == QLatin1String("compact")) ? Density::Compact : Density::Comfortable;
@@ -46,6 +47,7 @@ void ThemeManager::saveToSettings() const
     if (m_mode == Mode::Light) modeStr = QStringLiteral("light");
     else if (m_mode == Mode::HighContrast) modeStr = QStringLiteral("hc");
     s.setValue(QStringLiteral("themeMode"), modeStr);
+    s.setValue(QStringLiteral("themeHcFromLight"), m_hcFromLight);
     s.setValue(QStringLiteral("themeDensity"),
                m_density == Density::Compact ? QStringLiteral("compact")
                                              : QStringLiteral("comfortable"));
@@ -63,6 +65,8 @@ void ThemeManager::setPaletteId(const QString &id)
 void ThemeManager::setMode(Mode mode)
 {
     if (m_mode == mode) return;
+    if (mode == Mode::HighContrast && m_mode != Mode::HighContrast)
+        m_hcFromLight = (m_mode == Mode::Light);
     m_mode = mode;
     saveToSettings();
     rebuild();
@@ -86,7 +90,7 @@ void ThemeManager::setReduceMotion(bool on)
 
 void ThemeManager::rebuild()
 {
-    m_tokens = buildTokens(m_paletteId, m_mode, m_density);
+    m_tokens = buildTokens(m_paletteId, m_mode, m_density, m_hcFromLight);
     m_tokens.motion.reduced = m_reduceMotion;
 
     if (qApp) {
