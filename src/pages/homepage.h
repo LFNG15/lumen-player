@@ -42,6 +42,7 @@ private:
     QWidget *createChipCover(const Folder &folder);
     QWidget *createRecentCard(const Folder &folder);
     int chipColumnsForWidth(int w) const;
+    void applyGreetingLayout();
 
     TrackModel *m_model;
     TrackContextMenu *m_ctx = nullptr;
@@ -59,6 +60,8 @@ private:
     QWidget *m_addedSection = nullptr;
     QListView *m_addedView = nullptr;
     TrackListModel *m_addedModel = nullptr;
+
+    QLabel *m_greetLabel = nullptr;
 
     int m_lastChipCols = -1;
     int m_lastCurrentId = 0;

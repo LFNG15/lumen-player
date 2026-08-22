@@ -5,6 +5,7 @@
 #include "models/trackcontextmenu.h"
 #include "models/trackrowdelegate.h"
 #include <QLabel>
+#include <QSizePolicy>
 #include <QPushButton>
 #include <QGridLayout>
 #include <QPainter>
@@ -93,9 +94,21 @@ int HomePage::chipColumnsForWidth(int w) const
     return qBound(1, (qMax(240, w - 64) + 8) / 208, 4);
 }
 
+void HomePage::applyGreetingLayout()
+{
+    if (!m_greetLabel) return;
+    const int viewW = m_scroll ? m_scroll->viewport()->width() : width();
+    const int avail = qMax(80, viewW - 64);
+    // 16pt at ~280px of content, 28pt at >= 720px — every pixel of resize counts.
+    const int pt = qBound(16, 16 + (avail - 280) * 12 / 440, 28);
+    m_greetLabel->setFont(Theme::titleFont(pt));
+    m_greetLabel->setMaximumWidth(avail);
+}
+
 void HomePage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+    applyGreetingLayout();
     const int cols = chipColumnsForWidth(width());
     if (cols != m_lastChipCols && m_lastChipCols >= 0) {
         m_lastChipCols = cols;
@@ -234,6 +247,8 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     m_lastPlaying = isPlaying;
     m_lastChipCols = chipColumnsForWidth(width());
 
+    m_greetLabel = nullptr;
+
     // Clear only the dynamic region (greeting/chips/recents) — the three track
     // lists below reload() their existing models instead of being torn down.
     QLayoutItem *item;
@@ -254,10 +269,13 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     const int nVar = greetingVariantCount(hour);
     const int variant = QRandomGenerator::global()->bounded(qMax(1, nVar));
     const QString greeting = Lang::tr(greetingPtFor(hour, variant));
-    auto *greetLabel = new QLabel(greeting);
-    greetLabel->setFont(Theme::titleFont(28));
-    lumen::design::StyleSheet::apply(greetLabel, QString("color: %1; background: transparent; padding-bottom: 8px;").arg(Theme::text().name()));
-    m_dynamicLayout->addWidget(greetLabel);
+    m_greetLabel = new QLabel(greeting);
+    m_greetLabel->setWordWrap(true);
+    m_greetLabel->setMinimumWidth(0);
+    m_greetLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    lumen::design::StyleSheet::apply(m_greetLabel, QString("color: %1; background: transparent; padding-bottom: 8px;").arg(Theme::text().name()));
+    m_dynamicLayout->addWidget(m_greetLabel);
+    applyGreetingLayout();
 
     if (m_model->tracks().isEmpty()) {
         // Empty state
