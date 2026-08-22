@@ -108,8 +108,14 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     ).arg(Theme::accent().name(), Theme::onAccent().name(),
           Theme::accentHover().name(),
           Theme::border().name(), Theme::textMuted().name()));
-    connect(m_downloadBtn, &QPushButton::clicked, this, &AddMusicPage::startDownload);
-    connect(m_urlEdit, &QLineEdit::returnPressed,  this, &AddMusicPage::startDownload);
+    connect(m_downloadBtn, &QPushButton::clicked, this, [this]() {
+        m_downloadRetried = false;
+        startDownload();
+    });
+    connect(m_urlEdit, &QLineEdit::returnPressed, this, [this]() {
+        m_downloadRetried = false;
+        startDownload();
+    });
     urlRow->addWidget(m_downloadBtn);
 
     urlCardLayout->addLayout(urlRow);
@@ -651,6 +657,18 @@ void AddMusicPage::startDownload() {
         m_downloadBtn->setEnabled(true);
 
         if (exitCode != 0 || exitStatus != QProcess::NormalExit) {
+            if (!m_downloadRetried) {
+                QString uerr;
+                const QString updated = lumen::tools::updateYtDlpAfterFailure(&uerr);
+                if (!updated.isEmpty()) {
+                    m_downloadRetried = true;
+                    lumen::design::StyleSheet::apply(m_downloadStatus, QString(
+                        "color: %1; background: transparent;").arg(Theme::textMuted().name()));
+                    m_downloadStatus->setText(Lang::tr("Atualizando ferramenta de download…"));
+                    startDownload();
+                    return;
+                }
+            }
             lumen::design::StyleSheet::apply(m_downloadStatus, QString("color: %1; background: transparent;").arg(Theme::danger().name()));
             QString detail = m_lastDownloadOutput.isEmpty()
                 ? Lang::tr("Verifique o link ou tente novamente.")
@@ -686,7 +704,9 @@ void AddMusicPage::startDownload() {
 
 
     QString ytErr;
-    const QString ytDlp = lumen::tools::ensureYtDlp(&ytErr);
+    const QString ytDlp = lumen::tools::ensureFreshYtDlp(&ytErr, [this](const QString &pt) {
+        m_downloadStatus->setText(Lang::tr(pt));
+    });
     if (ytDlp.isEmpty() && !ytErr.isEmpty())
         qWarning() << "yt-dlp bootstrap:" << ytErr;
     if (ytDlp.isEmpty()) {

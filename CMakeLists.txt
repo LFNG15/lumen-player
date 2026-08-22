@@ -353,6 +353,9 @@ if(LUMEN_BUILD_TESTS)
         src/design/paint.cpp)
     target_link_libraries(test_database_playlist PRIVATE Qt6::Network)
 
+    lumen_add_test(test_ytdlp_version
+        tests/test_ytdlp_version.cpp)
+
     lumen_add_test(test_playback_state
         tests/test_playback_state.cpp
         src/database/database.cpp

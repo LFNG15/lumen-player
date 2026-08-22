@@ -85,6 +85,7 @@ private:
     bool m_needsMatching = false;
     bool m_running    = false;
     bool m_cancelled  = false;
+    bool m_ytdlpRetried = false;
 };
 
 #endif // IMPORTPLAYLISTDIALOG_H

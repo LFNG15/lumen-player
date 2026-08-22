@@ -227,7 +227,9 @@ void ImportPlaylistDialog::parseSpotifyEmbed(const QByteArray &html) {
 
 void ImportPlaylistDialog::fetchYouTubePlaylist() {
     QString ytErr;
-    const QString ytDlp = lumen::tools::ensureYtDlp(&ytErr);
+    const QString ytDlp = lumen::tools::ensureFreshYtDlp(&ytErr, [this](const QString &pt) {
+        m_statusLabel->setText(Lang::tr(pt));
+    });
     if (ytDlp.isEmpty()) {
         showError(ytErr.isEmpty()
             ? Lang::tr("yt-dlp não encontrado. Verifique sua pasta de instalação.")
@@ -423,7 +425,7 @@ void ImportPlaylistDialog::findNextMatch() {
         findNextMatch();
     });
 
-    m_proc->start(lumen::tools::ensureYtDlp(), {"-J", "--flat-playlist", query});
+    m_proc->start(lumen::tools::ensureFreshYtDlp(), {"-J", "--flat-playlist", query});
 }
 
 void ImportPlaylistDialog::onMatchingDone() {
@@ -481,7 +483,7 @@ void ImportPlaylistDialog::startDownloads() {
     if (name.isEmpty()) return;
     m_playlistName = name;
 
-    if (lumen::tools::ensureYtDlp().isEmpty()) {
+    if (lumen::tools::ensureFreshYtDlp().isEmpty()) {
         showError(Lang::tr("yt-dlp não encontrado. Verifique sua pasta de instalação."));
         return;
     }
@@ -561,6 +563,16 @@ void ImportPlaylistDialog::downloadNext() {
 
         auto *li = m_listWidget->item(index);
         if (file.isEmpty()) {
+            if (!m_ytdlpRetried) {
+                QString uerr;
+                const QString updated = lumen::tools::updateYtDlpAfterFailure(&uerr);
+                if (!updated.isEmpty()) {
+                    m_ytdlpRetried = true;
+                    --m_queuePos;
+                    downloadNext();
+                    return;
+                }
+            }
             if (li) {
                 li->setForeground(Theme::danger());
                 li->setText(QString("✗ %1").arg(li->text()));
@@ -581,7 +593,7 @@ void ImportPlaylistDialog::downloadNext() {
         downloadNext();
     });
 
-    m_proc->start(lumen::tools::ensureYtDlp(),
+    m_proc->start(lumen::tools::ensureFreshYtDlp(),
                   MediaTools::downloadArgs(item.matchUrl, outTemplate));
 }
 
