@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Album and Artist pages
 - Local discovery shelves (opt-in)
 
+## [2.0.1] - 2026-08-22
+
+### Fixed
+
+- **#20 / #21** — fila, última faixa, posição e volume agora sobrevivem ao restart. Causa principal: `QString` nulo no `join` de listas vazias fazia o `UPDATE` de `playback_state` falhar inteiro (NOT NULL). Volume da roda do mouse/teclado passa a chegar no engine; contexto efetivo é persistido; salvamento a cada 30s e no logoff do Windows.
+- **Play sem seek** — após restaurar a sessão, o play não ficava mudo até o usuário avançar a barra. A mídia só é carregada no primeiro play (lazy-load); mídia inválida mostra toast.
+- **#23** — diálogo de edição (e criar/renomear playlist) deixa a altura com o layout; campos não cortam em scaling 125%.
+- **#25** — Alto Contraste é visivelmente distinto: HC-escuro (fundos pretos) a partir do dark, HC-claro (fundos brancos) a partir do light.
+- **#18** — modo light: bordas mais visíveis, hover de card via `cardHover`, contraste de texto AA.
+- **#26** — troca PT↔EN ao vivo retraduz sidebar, busca, Home, Biblioteca, PlayerBar, Adicionar e detalhe de playlist (bindings existentes, com guarda contra widget destruído).
+- **Download YouTube** — pin do yt-dlp atualizado para `2026.08.19`; o binário gerenciado tem prioridade; auto-update por versão e retry único após falha.
+
+### Added
+
+- **#19** — botão Favoritar (coração) na PlayerBar, entre next e repeat; some junto de shuffle/repeat em janela estreita.
+- **#22** — saudação da Home com 5 faixas (madrugada / manhã / tarde / noite / noite alta) e 3 variações.
+- **#24** — seta Voltar em Playlists e Biblioteca Completa (histórico real); Adicionar usa o mesmo ícone.
+
 ## [2.0.0] - 2026-07-28
 
 ### Added
