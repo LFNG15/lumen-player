@@ -15,21 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.1] - 2026-08-22
 
+Patch release after v2.0.0: session restore, YouTube downloads, live language, contrast, and a few quality-of-life extras.
+
+### Highlights
+
+- **Your session actually comes back.** Queue, current track, playback position, and volume now survive closing and reopening the app — including existing v2.0.0 libraries. Volume changes from the mouse wheel or keyboard are saved. State is also written every 30 seconds and on Windows logoff, so a crash or shutdown does not wipe the session.
+- **Play after restore works immediately.** After a restart you can press Play and hear audio from the saved position. You no longer have to drag the seek bar to “kick” playback. If the file is missing, the app shows a toast instead of staying silent.
+- **YouTube downloads stay current.** yt-dlp is pinned to **2026.08.19**, the copy Lumen Music manages is preferred over a stale exe next to the app, outdated binaries auto-update, and a failed download retries once after updating.
+
+### New
+
+- **Like from the player bar** (#19) — a heart between Next and Repeat. It stays in sync with Liked Songs; it hides with Shuffle/Repeat on a narrow window.
+- **Time-aware Home greeting** (#22) — five bands (late night, morning, afternoon, evening, late evening) with several casual lines each, in PT and EN. The greeting scales and wraps when you resize the window.
+- **Back arrows** (#24) — Playlists and Full Library now have the same Back control as playlist detail, using real navigation history. The Add page uses the same icon.
+
 ### Fixed
 
-- **#20 / #21** — fila, última faixa, posição e volume agora sobrevivem ao restart. Causa principal: `QString` nulo no `join` de listas vazias fazia o `UPDATE` de `playback_state` falhar inteiro (NOT NULL). Volume da roda do mouse/teclado passa a chegar no engine; contexto efetivo é persistido; salvamento a cada 30s e no logoff do Windows.
-- **Play sem seek** — após restaurar a sessão, o play não ficava mudo até o usuário avançar a barra. A mídia só é carregada no primeiro play (lazy-load); mídia inválida mostra toast.
-- **#23** — diálogo de edição (e criar/renomear playlist) deixa a altura com o layout; campos não cortam em scaling 125%.
-- **#25** — Alto Contraste é visivelmente distinto: HC-escuro (fundos pretos) a partir do dark, HC-claro (fundos brancos) a partir do light.
-- **#18** — modo light: bordas mais visíveis, hover de card via `cardHover`, contraste de texto AA.
-- **#26** — troca PT↔EN ao vivo retraduz sidebar, busca, Home, Biblioteca, PlayerBar, Adicionar e detalhe de playlist (bindings existentes, com guarda contra widget destruído).
-- **Download YouTube** — pin do yt-dlp atualizado para `2026.08.19`; o binário gerenciado tem prioridade; auto-update por versão e retry único após falha.
-
-### Added
-
-- **#19** — botão Favoritar (coração) na PlayerBar, entre next e repeat; some junto de shuffle/repeat em janela estreita.
-- **#22** — saudação da Home com 5 faixas (madrugada / manhã / tarde / noite / noite alta) e 3 variações.
-- **#24** — seta Voltar em Playlists e Biblioteca Completa (histórico real); Adicionar usa o mesmo ícone.
+- **Edit / create / rename dialogs** (#23) — height follows the layout so fields and buttons are not clipped at 125% Windows scaling.
+- **High contrast** (#25) — turning it on is obvious: dark users get a near-black HC look, light users get a near-white one. Pure backgrounds, stronger borders, visible hover and focus.
+- **Light mode** (#18) — clearer card borders, card hover, and AA text contrast.
+- **Language switch** (#26) — switching PT↔EN updates the sidebar, search, Home, Library, player bar, Add Music, and playlist detail without restarting.
+- **App icon** — the Lumen Music mark uses a transparent `.ico` on the taskbar and desktop shortcut (no black square).
 
 ## [2.0.0] - 2026-07-28
 
