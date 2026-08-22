@@ -2,6 +2,7 @@
 #include "lang.h"
 #include "theme.h"
 #include "design/stylesheet.h"
+#include "design/icons.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -75,9 +76,10 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     m_prevBtn    = new QPushButton(QStringLiteral("\uE100"), this);
     m_playBtn    = new QPushButton(QStringLiteral("\uE102"), this);
     m_nextBtn    = new QPushButton(QStringLiteral("\uE101"), this);
+    m_likeBtn    = new QPushButton(lumen::design::Icons::heartOutline(), this);
     m_repeatBtn  = new QPushButton(QStringLiteral("\uE1CD"), this);
 
-    for (auto *btn : {m_shuffleBtn, m_prevBtn, m_nextBtn, m_repeatBtn}) {
+    for (auto *btn : {m_shuffleBtn, m_prevBtn, m_nextBtn, m_likeBtn, m_repeatBtn}) {
         btn->setFixedSize(32, 32);
         btn->setCursor(Qt::PointingHandCursor);
         lumen::design::StyleSheet::apply(btn, buttonStyle(false));
@@ -94,6 +96,7 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     btnLayout->addWidget(m_prevBtn);
     btnLayout->addWidget(m_playBtn);
     btnLayout->addWidget(m_nextBtn);
+    btnLayout->addWidget(m_likeBtn);
     btnLayout->addWidget(m_repeatBtn);
     centerLayout->addLayout(btnLayout);
 
@@ -185,6 +188,7 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     });
     connect(m_repeatBtn, &QPushButton::clicked, m_engine, &PlaybackEngine::cycleRepeatMode);
     connect(m_queueBtn, &QPushButton::clicked, this, &PlayerBar::queueRequested);
+    connect(m_likeBtn, &QPushButton::clicked, this, &PlayerBar::likeClicked);
 
     connect(m_progressSlider, &QSlider::sliderMoved, this, [this](int val) {
         const qint64 dur = m_engine->duration();
@@ -310,6 +314,7 @@ void PlayerBar::applyResponsiveLayout(int width)
 
     if (m_shuffleBtn) m_shuffleBtn->setVisible(!narrow);
     if (m_repeatBtn)  m_repeatBtn->setVisible(!narrow);
+    if (m_likeBtn)    m_likeBtn->setVisible(!narrow);
 }
 
 void PlayerBar::showEmptyUi()
@@ -375,6 +380,18 @@ void PlayerBar::restoreSession()
     else
         showEmptyUi();
     syncTransportUi();
+}
+
+void PlayerBar::setLikedState(bool hasTrack, bool liked)
+{
+    if (!m_likeBtn) return;
+    m_likeBtn->setEnabled(hasTrack);
+    m_likeBtn->setText(liked ? lumen::design::Icons::heart()
+                             : lumen::design::Icons::heartOutline());
+    lumen::design::StyleSheet::apply(m_likeBtn, buttonStyle(hasTrack && liked));
+    m_likeBtn->setToolTip(hasTrack
+        ? (liked ? Lang::tr("Descurtir") : Lang::tr("Curtir"))
+        : QString());
 }
 
 void PlayerBar::updateVolIcon()

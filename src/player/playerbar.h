@@ -36,12 +36,14 @@ public:
     int  currentTrackId() const;
     void persistState();
     void restoreSession();
+    void setLikedState(bool hasTrack, bool liked);
 
 signals:
     void trackChanged(int trackId);
     void playingChanged(bool playing);
     void queueChanged();
     void queueRequested();
+    void likeClicked();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -70,6 +72,7 @@ private:
     QPushButton *m_shuffleBtn = nullptr;
     QPushButton *m_repeatBtn = nullptr;
     QPushButton *m_queueBtn = nullptr;
+    QPushButton *m_likeBtn  = nullptr;
 
     ClickableSlider *m_progressSlider = nullptr;
     ClickableSlider *m_volumeSlider = nullptr;
