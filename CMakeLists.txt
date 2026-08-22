@@ -46,7 +46,6 @@ set(PROJECT_SOURCES
     src/design/palettes.cpp
     src/design/thememanager.cpp
     src/design/stylesheet.cpp
-    src/design/components.cpp
     src/design/paint.cpp
     src/design/i18n.cpp
     src/mainwindow.cpp
@@ -81,7 +80,6 @@ set(PROJECT_HEADERS
     src/design/palettes.h
     src/design/thememanager.h
     src/design/stylesheet.h
-    src/design/components.h
     src/design/paint.h
     src/design/icons.h
     src/design/i18n.h
