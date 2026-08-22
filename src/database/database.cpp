@@ -107,6 +107,14 @@ void Database::ensurePlaybackStateSchema()
         )
     )";
 
+    auto addCol = [](const char *sql) {
+        QSqlQuery a;
+        a.exec(QString::fromUtf8(sql));
+    };
+    auto sqlText = [](const QString &s) {
+        return s.isNull() ? QStringLiteral("") : s;
+    };
+
     QSqlQuery q;
     QString ddl;
     if (tableExists(QStringLiteral("playback_state"))) {
@@ -114,92 +122,92 @@ void Database::ensurePlaybackStateSchema()
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='playback_state'"));
         if (q.next())
             ddl = q.value(0).toString();
+        q.finish();
     }
 
-    const bool missing = ddl.isEmpty();
-    // Match only the repeat_mode check (shuffle also uses IN (0,1)).
-    const bool restrictiveRepeat =
-        ddl.contains(QStringLiteral("CHECK (repeat_mode IN (0,1))"));
-
-    if (missing) {
+    if (ddl.isEmpty()) {
         q.exec(QString::fromUtf8(kCreate));
         q.exec(QStringLiteral("INSERT OR IGNORE INTO playback_state (id) VALUES (1)"));
         return;
     }
 
-    if (restrictiveRepeat) {
-        // Snapshot whatever columns exist, then rebuild with the full shape.
-        int trackId = 0, shuffle = 0, repeatMode = 0, muted = 0, contextIndex = -1;
-        qint64 posMs = 0;
-        double volume = 0.7;
-        QString contextIds, userQueueIds, contextName;
+    // Always add missing columns first. v2.0.0 DBs often have the old
+    // CHECK (repeat_mode IN (0,1)) plus a few ALTERs, but not context_index /
+    // context_name — loadState's SELECT then fails and restore looks empty
+    // even though volume/track/queue were written.
+    addCol("ALTER TABLE playback_state ADD COLUMN muted INTEGER NOT NULL DEFAULT 0");
+    addCol("ALTER TABLE playback_state ADD COLUMN context_ids TEXT NOT NULL DEFAULT ''");
+    addCol("ALTER TABLE playback_state ADD COLUMN user_queue_ids TEXT NOT NULL DEFAULT ''");
+    addCol("ALTER TABLE playback_state ADD COLUMN context_index INTEGER NOT NULL DEFAULT -1");
+    addCol("ALTER TABLE playback_state ADD COLUMN context_name TEXT NOT NULL DEFAULT ''");
+    q.exec(QStringLiteral("INSERT OR IGNORE INTO playback_state (id) VALUES (1)"));
 
-        QSqlQuery sel(QStringLiteral("SELECT * FROM playback_state WHERE id = 1"));
-        if (sel.next()) {
-            const QSqlRecord rec = sel.record();
-            auto col = [&](const char *name) { return rec.indexOf(QLatin1String(name)); };
-            if (col("current_track_id") >= 0)
-                trackId = sel.value(col("current_track_id")).toInt();
-            if (col("position_ms") >= 0)
-                posMs = sel.value(col("position_ms")).toLongLong();
-            if (col("volume") >= 0)
-                volume = sel.value(col("volume")).toDouble();
-            if (col("shuffle") >= 0)
-                shuffle = sel.value(col("shuffle")).toInt();
-            if (col("repeat_mode") >= 0)
-                repeatMode = qBound(0, sel.value(col("repeat_mode")).toInt(), 2);
-            if (col("muted") >= 0)
-                muted = sel.value(col("muted")).toInt();
-            if (col("context_ids") >= 0)
-                contextIds = sel.value(col("context_ids")).toString();
-            if (col("user_queue_ids") >= 0)
-                userQueueIds = sel.value(col("user_queue_ids")).toString();
-            if (col("context_index") >= 0)
-                contextIndex = sel.value(col("context_index")).toInt();
-            if (col("context_name") >= 0)
-                contextName = sel.value(col("context_name")).toString();
-        }
+    // IN (0,1,2) contains the substring IN (0,1) — require the missing ",2".
+    const bool oldRepeatCheck =
+        ddl.contains(QLatin1String("CHECK (repeat_mode IN (0,1))"))
+        && !ddl.contains(QLatin1String("CHECK (repeat_mode IN (0,1,2))"));
+    if (!oldRepeatCheck)
+        return;
 
-        q.exec(QStringLiteral("DROP TABLE playback_state"));
-        if (!q.exec(QString::fromUtf8(kCreate))) {
-            qWarning() << "ensurePlaybackStateSchema recreate failed:" << q.lastError();
-            return;
-        }
+    int trackId = 0, shuffle = 0, repeatMode = 0, muted = 0, contextIndex = -1;
+    qint64 posMs = 0;
+    double volume = 0.7;
+    QString contextIds, userQueueIds, contextName;
 
-        QSqlQuery ins;
-        ins.prepare(QStringLiteral(
-            "INSERT INTO playback_state ("
-            "  id, current_track_id, position_ms, volume, shuffle, repeat_mode,"
-            "  muted, context_ids, user_queue_ids, context_index, context_name"
-            ") VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
-        ins.addBindValue(trackId);
-        ins.addBindValue(posMs);
-        ins.addBindValue(volume);
-        ins.addBindValue(shuffle ? 1 : 0);
-        ins.addBindValue(repeatMode);
-        ins.addBindValue(muted ? 1 : 0);
-        ins.addBindValue(contextIds);
-        ins.addBindValue(userQueueIds);
-        ins.addBindValue(contextIndex);
-        ins.addBindValue(contextName);
-        if (!ins.exec())
-            qWarning() << "ensurePlaybackStateSchema reinsert failed:" << ins.lastError();
+    QSqlQuery sel(QStringLiteral("SELECT * FROM playback_state WHERE id = 1"));
+    if (sel.next()) {
+        const QSqlRecord rec = sel.record();
+        auto col = [&](const char *name) { return rec.indexOf(QLatin1String(name)); };
+        if (col("current_track_id") >= 0)
+            trackId = sel.value(col("current_track_id")).toInt();
+        if (col("position_ms") >= 0)
+            posMs = sel.value(col("position_ms")).toLongLong();
+        if (col("volume") >= 0)
+            volume = sel.value(col("volume")).toDouble();
+        if (col("shuffle") >= 0)
+            shuffle = sel.value(col("shuffle")).toInt();
+        if (col("repeat_mode") >= 0)
+            repeatMode = qBound(0, sel.value(col("repeat_mode")).toInt(), 2);
+        if (col("muted") >= 0)
+            muted = sel.value(col("muted")).toInt();
+        if (col("context_ids") >= 0)
+            contextIds = sel.value(col("context_ids")).toString();
+        if (col("user_queue_ids") >= 0)
+            userQueueIds = sel.value(col("user_queue_ids")).toString();
+        if (col("context_index") >= 0)
+            contextIndex = sel.value(col("context_index")).toInt();
+        if (col("context_name") >= 0)
+            contextName = sel.value(col("context_name")).toString();
+    }
+    sel.finish();
+
+    if (!q.exec(QStringLiteral("DROP TABLE playback_state"))) {
+        qWarning() << "ensurePlaybackStateSchema drop failed:" << q.lastError().text();
+        return;
+    }
+    if (!q.exec(QString::fromUtf8(kCreate))) {
+        qWarning() << "ensurePlaybackStateSchema recreate failed:" << q.lastError();
         return;
     }
 
-    // Table already correct for repeat — just add P4 columns if an older build
-    // created the wide CHECK without the extras.
-    q.exec(QStringLiteral(
-        "ALTER TABLE playback_state ADD COLUMN muted INTEGER NOT NULL DEFAULT 0"));
-    q.exec(QStringLiteral(
-        "ALTER TABLE playback_state ADD COLUMN context_ids TEXT NOT NULL DEFAULT ''"));
-    q.exec(QStringLiteral(
-        "ALTER TABLE playback_state ADD COLUMN user_queue_ids TEXT NOT NULL DEFAULT ''"));
-    q.exec(QStringLiteral(
-        "ALTER TABLE playback_state ADD COLUMN context_index INTEGER NOT NULL DEFAULT -1"));
-    q.exec(QStringLiteral(
-        "ALTER TABLE playback_state ADD COLUMN context_name TEXT NOT NULL DEFAULT ''"));
-    q.exec(QStringLiteral("INSERT OR IGNORE INTO playback_state (id) VALUES (1)"));
+    QSqlQuery ins;
+    ins.prepare(QStringLiteral(
+        "INSERT INTO playback_state ("
+        "  id, current_track_id, position_ms, volume, shuffle, repeat_mode,"
+        "  muted, context_ids, user_queue_ids, context_index, context_name"
+        ") VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+    ins.addBindValue(trackId);
+    ins.addBindValue(posMs);
+    ins.addBindValue(volume);
+    ins.addBindValue(shuffle ? 1 : 0);
+    ins.addBindValue(repeatMode);
+    ins.addBindValue(muted ? 1 : 0);
+    ins.addBindValue(sqlText(contextIds));
+    ins.addBindValue(sqlText(userQueueIds));
+    ins.addBindValue(contextIndex);
+    ins.addBindValue(sqlText(contextName));
+    if (!ins.exec())
+        qWarning() << "ensurePlaybackStateSchema reinsert failed:" << ins.lastError();
 }
 
 void Database::ensureLegacySchema()
@@ -898,6 +906,11 @@ namespace {
 
 QString joinIds(const QList<int> &ids)
 {
+    // QStringList::join on an empty list returns a *null* QString, which Qt
+    // binds as SQL NULL and trips the NOT NULL columns — the whole UPDATE
+    // then fails and volume/track/queue are all lost (#20, #21).
+    if (ids.isEmpty())
+        return QStringLiteral("");
     QStringList parts;
     parts.reserve(ids.size());
     for (int id : ids)
@@ -929,6 +942,10 @@ Database::PlaybackState Database::loadState()
         "SELECT current_track_id, position_ms, volume, shuffle, repeat_mode, "
         "       muted, context_ids, user_queue_ids, context_index, context_name "
         "FROM playback_state WHERE id = 1"));
+    if (!q.exec()) {
+        qWarning() << "loadState failed:" << q.lastError().text();
+        return s;
+    }
     if (q.next()) {
         s.trackId    = q.value(0).toInt();
         s.posMs      = q.value(1).toLongLong();
@@ -965,7 +982,30 @@ void Database::saveState(const PlaybackState &s)
     q.addBindValue(joinIds(s.contextIds));
     q.addBindValue(joinIds(s.userQueueIds));
     q.addBindValue(s.contextIndex);
-    q.addBindValue(s.contextName);
-    if (!q.exec())
+    // Null QString binds as SQL NULL; column is NOT NULL DEFAULT ''.
+    q.addBindValue(s.contextName.isNull() ? QStringLiteral("") : s.contextName);
+    if (!q.exec()) {
         qWarning() << "saveState failed:" << q.lastError().text();
+        return;
+    }
+    if (q.numRowsAffected() == 0) {
+        QSqlQuery ins;
+        ins.prepare(QStringLiteral(
+            "INSERT OR REPLACE INTO playback_state ("
+            "  id, current_track_id, position_ms, volume, shuffle, repeat_mode,"
+            "  muted, context_ids, user_queue_ids, context_index, context_name"
+            ") VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+        ins.addBindValue(s.trackId);
+        ins.addBindValue(s.posMs);
+        ins.addBindValue(s.volume);
+        ins.addBindValue(s.shuffle ? 1 : 0);
+        ins.addBindValue(qBound(0, s.repeatMode, 2));
+        ins.addBindValue(s.muted ? 1 : 0);
+        ins.addBindValue(joinIds(s.contextIds));
+        ins.addBindValue(joinIds(s.userQueueIds));
+        ins.addBindValue(s.contextIndex);
+        ins.addBindValue(s.contextName.isNull() ? QStringLiteral("") : s.contextName);
+        if (!ins.exec())
+            qWarning() << "saveState insert failed:" << ins.lastError().text();
+    }
 }

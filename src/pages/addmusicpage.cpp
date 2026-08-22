@@ -1,4 +1,5 @@
 #include "design/stylesheet.h"
+#include "design/icons.h"
 #include "addmusicpage.h"
 #include "database.h"
 #include "tools/ytdlp_bootstrap.h"
@@ -46,22 +47,25 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     layout->setContentsMargins(32, 28, 32, 28);
     layout->setSpacing(12);
 
-    auto *backBtn = new QPushButton("←");
+    auto *backBtn = new QPushButton(lumen::design::Icons::back());
     backBtn->setFixedSize(34, 34);
     backBtn->setCursor(Qt::PointingHandCursor);
+    backBtn->setFont(Theme::iconFont(12));
     lumen::design::StyleSheet::apply(backBtn, QString(
-        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; font-size: 16px; }"
+        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; }"
         "QPushButton:hover { background: " + Theme::hoverBg(0.1) + "; }"
     ).arg(Theme::text().name()));
     connect(backBtn, &QPushButton::clicked, this, &AddMusicPage::navigateBack);
     layout->addWidget(backBtn, 0, Qt::AlignLeft);
 
-    auto *title = new QLabel(Lang::tr("Inserção de Músicas"));
+    auto *title = new QLabel();
+    Lang::bindText(title, QStringLiteral("Inserção de Músicas"));
     title->setFont(Theme::titleFont(28));
     lumen::design::StyleSheet::apply(title, QString("color: %1; background: transparent;").arg(Theme::text().name()));
     layout->addWidget(title);
 
-    auto *subtitle = new QLabel(Lang::tr("Arraste seus arquivos de áudio ou clique para selecionar"));
+    auto *subtitle = new QLabel();
+    Lang::bindText(subtitle, QStringLiteral("Arraste seus arquivos de áudio ou clique para selecionar"));
     subtitle->setFont(Theme::bodyFont(13));
     lumen::design::StyleSheet::apply(subtitle, QString("color: %1; background: transparent; padding-bottom: 12px;").arg(Theme::textSoft().name()));
     layout->addWidget(subtitle);
@@ -97,7 +101,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
             Theme::border().name(), Theme::accent().name()));
     urlRow->addWidget(m_urlEdit, 1);
 
-    m_downloadBtn = new QPushButton(Lang::tr("Baixar"));
+    m_downloadBtn = new QPushButton();
+    Lang::bindText(m_downloadBtn, QStringLiteral("Baixar"));
     m_downloadBtn->setFixedSize(80, 36);
     m_downloadBtn->setCursor(Qt::PointingHandCursor);
     m_downloadBtn->setFont(Theme::bodyFont(12));
@@ -108,8 +113,14 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     ).arg(Theme::accent().name(), Theme::onAccent().name(),
           Theme::accentHover().name(),
           Theme::border().name(), Theme::textMuted().name()));
-    connect(m_downloadBtn, &QPushButton::clicked, this, &AddMusicPage::startDownload);
-    connect(m_urlEdit, &QLineEdit::returnPressed,  this, &AddMusicPage::startDownload);
+    connect(m_downloadBtn, &QPushButton::clicked, this, [this]() {
+        m_downloadRetried = false;
+        startDownload();
+    });
+    connect(m_urlEdit, &QLineEdit::returnPressed, this, [this]() {
+        m_downloadRetried = false;
+        startDownload();
+    });
     urlRow->addWidget(m_downloadBtn);
 
     urlCardLayout->addLayout(urlRow);
@@ -126,7 +137,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     m_downloadFolderLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     downloadFolderRow->addWidget(m_downloadFolderLabel, 1);
 
-    auto *changeFolderBtn = new QPushButton(Lang::tr("Alterar"));
+    auto *changeFolderBtn = new QPushButton();
+    Lang::bindText(changeFolderBtn, QStringLiteral("Alterar"));
     changeFolderBtn->setCursor(Qt::PointingHandCursor);
     changeFolderBtn->setFont(Theme::bodyFont(11));
     lumen::design::StyleSheet::apply(changeFolderBtn, QString(
@@ -158,13 +170,17 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     importCardLayout->setContentsMargins(16, 14, 16, 14);
     importCardLayout->setSpacing(8);
 
-    auto *importHeader = new QLabel(QString("  ") + Lang::tr("Converter playlist de streaming"));
+    auto *importHeader = new QLabel();
+    Lang::bind(importHeader, [importHeader]() {
+        importHeader->setText(QString("  ") + Lang::tr("Converter playlist de streaming"));
+    });
     importHeader->setFont(Theme::bodyFont(12));
     lumen::design::StyleSheet::apply(importHeader, QString("color: %1; background: transparent; font-weight: bold; font-family: \"Segoe UI\", \"Segoe MDL2 Assets\";")
         .arg(Theme::accent().name()));
     importCardLayout->addWidget(importHeader);
 
-    auto *importHint = new QLabel(Lang::tr("Cole o link de uma playlist do Spotify ou do YouTube para trazê-la para o Lumen Music."));
+    auto *importHint = new QLabel();
+    Lang::bindText(importHint, QStringLiteral("Cole o link de uma playlist do Spotify ou do YouTube para trazê-la para o Lumen Music."));
     importHint->setFont(Theme::bodyFont(11));
     importHint->setWordWrap(true);
     lumen::design::StyleSheet::apply(importHint, QString("color: %1; background: transparent;").arg(Theme::textMuted().name()));
@@ -179,7 +195,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     lumen::design::StyleSheet::apply(m_importUrlEdit, m_urlEdit->styleSheet());
     importRow->addWidget(m_importUrlEdit, 1);
 
-    auto *importBtn = new QPushButton(Lang::tr("Importar"));
+    auto *importBtn = new QPushButton();
+    Lang::bindText(importBtn, QStringLiteral("Importar"));
     importBtn->setFixedSize(80, 36);
     importBtn->setCursor(Qt::PointingHandCursor);
     importBtn->setFont(Theme::bodyFont(12));
@@ -217,7 +234,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     uploadIcon->setAlignment(Qt::AlignCenter);
     dropLayout->addWidget(uploadIcon);
 
-    m_dropLabel = new QLabel(Lang::tr("Clique ou arraste arquivos de áudio"));
+    m_dropLabel = new QLabel();
+    Lang::bindText(m_dropLabel, QStringLiteral("Clique ou arraste arquivos de áudio"));
     m_dropLabel->setFont(Theme::bodyFont(14));
     lumen::design::StyleSheet::apply(m_dropLabel, QString("color: %1; background: transparent;").arg(Theme::textSoft().name()));
     m_dropLabel->setAlignment(Qt::AlignCenter);
@@ -235,7 +253,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     layout->addWidget(m_dropZone);
 
     // Browse button
-    auto *browseBtn = new QPushButton(Lang::tr("Procurar Arquivos"));
+    auto *browseBtn = new QPushButton();
+    Lang::bindText(browseBtn, QStringLiteral("Procurar Arquivos"));
     browseBtn->setFixedSize(180, 40);
     browseBtn->setCursor(Qt::PointingHandCursor);
     browseBtn->setFont(Theme::bodyFont(13));
@@ -267,7 +286,8 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     folderLayout->setContentsMargins(0, 0, 0, 0);
     folderLayout->setSpacing(8);
 
-    auto *folderLabel = new QLabel(Lang::tr("PLAYLIST DE DESTINO"));
+    auto *folderLabel = new QLabel();
+    Lang::bindText(folderLabel, QStringLiteral("PLAYLIST DE DESTINO"));
     folderLabel->setFont(Theme::bodyFont(11));
     lumen::design::StyleSheet::apply(folderLabel, QString("color: %1; background: transparent; font-weight: bold; letter-spacing: 1px;").arg(Theme::textSoft().name()));
     folderLayout->addWidget(folderLabel);
@@ -295,7 +315,7 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
     folderRow->addWidget(m_folderCombo);
 
     m_newFolderEdit = new QLineEdit();
-    m_newFolderEdit->setPlaceholderText(Lang::tr("Nova playlist..."));
+    Lang::bindPlaceholder(m_newFolderEdit, QStringLiteral("Nova playlist..."));
     m_newFolderEdit->setFont(Theme::bodyFont(13));
     m_newFolderEdit->setMinimumWidth(160);
     lumen::design::StyleSheet::apply(m_newFolderEdit, QString(R"(
@@ -310,7 +330,15 @@ AddMusicPage::AddMusicPage(TrackModel *model, QWidget *parent)
 
     folderLayout->addLayout(folderRow);
 
-    m_addBtn = new QPushButton(Lang::tr("Adicionar à Biblioteca"));
+    m_addBtn = new QPushButton();
+    Lang::bind(m_addBtn, [this]() {
+        if (m_pendingFiles.isEmpty())
+            m_addBtn->setText(Lang::tr("Adicionar à Biblioteca"));
+        else
+            m_addBtn->setText(QString(Lang::tr("Adicionar %1 Música%2"))
+                .arg(m_pendingFiles.size())
+                .arg(m_pendingFiles.size() > 1 ? "s" : ""));
+    });
     m_addBtn->setFont(Theme::bodyFont(14));
     m_addBtn->setFixedHeight(46);
     m_addBtn->setMinimumWidth(220);
@@ -420,7 +448,6 @@ void AddMusicPage::processFiles(const QStringList &paths) {
 }
 
 void AddMusicPage::refreshFileList() {
-    // Clear list
     QLayoutItem *item;
     while ((item = m_fileListLayout->takeAt(0)) != nullptr) {
         if (item->widget()) item->widget()->deleteLater();
@@ -559,7 +586,7 @@ QString AddMusicPage::downloadDir() const {
 void AddMusicPage::chooseDownloadFolder() {
     QString dir = QFileDialog::getExistingDirectory(
         this, Lang::tr("Escolher pasta de downloads"), downloadDir());
-    if (dir.isEmpty()) return;            // user cancelled
+    if (dir.isEmpty()) return;
     QSettings().setValue("downloadDir", dir);
     updateDownloadFolderLabel();
 }
@@ -651,6 +678,18 @@ void AddMusicPage::startDownload() {
         m_downloadBtn->setEnabled(true);
 
         if (exitCode != 0 || exitStatus != QProcess::NormalExit) {
+            if (!m_downloadRetried) {
+                QString uerr;
+                const QString updated = lumen::tools::updateYtDlpAfterFailure(&uerr);
+                if (!updated.isEmpty()) {
+                    m_downloadRetried = true;
+                    lumen::design::StyleSheet::apply(m_downloadStatus, QString(
+                        "color: %1; background: transparent;").arg(Theme::textMuted().name()));
+                    m_downloadStatus->setText(Lang::tr("Atualizando ferramenta de download…"));
+                    startDownload();
+                    return;
+                }
+            }
             lumen::design::StyleSheet::apply(m_downloadStatus, QString("color: %1; background: transparent;").arg(Theme::danger().name()));
             QString detail = m_lastDownloadOutput.isEmpty()
                 ? Lang::tr("Verifique o link ou tente novamente.")
@@ -686,7 +725,9 @@ void AddMusicPage::startDownload() {
 
 
     QString ytErr;
-    const QString ytDlp = lumen::tools::ensureYtDlp(&ytErr);
+    const QString ytDlp = lumen::tools::ensureFreshYtDlp(&ytErr, [this](const QString &pt) {
+        m_downloadStatus->setText(Lang::tr(pt));
+    });
     if (ytDlp.isEmpty() && !ytErr.isEmpty())
         qWarning() << "yt-dlp bootstrap:" << ytErr;
     if (ytDlp.isEmpty()) {

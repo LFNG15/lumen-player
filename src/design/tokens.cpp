@@ -104,20 +104,38 @@ Colors deriveHighContrast(const Colors &base)
 {
     Colors hc = base;
     const bool dark = relativeLuminance(base.app) < 0.5;
+    if (dark) {
+        hc.app = QColor(Qt::black);
+        hc.sidebar = QColor(Qt::black);
+        hc.card = QColor(Qt::black);
+        hc.input = QColor(Qt::black);
+        hc.cardHover = QColor(48, 48, 48);
+        hc.overlay = QColor(0, 0, 0, 220);
+        hc.vinyl = QColor(Qt::black);
+    } else {
+        hc.app = QColor(Qt::white);
+        hc.sidebar = QColor(Qt::white);
+        hc.card = QColor(Qt::white);
+        hc.input = QColor(Qt::white);
+        hc.cardHover = QColor(210, 210, 210);
+        hc.overlay = QColor(0, 0, 0, 180);
+        hc.vinyl = QColor(Qt::white);
+    }
     hc.text   = dark ? QColor(Qt::white) : QColor(Qt::black);
     hc.border = hc.text;
-    hc.muted  = ensureContrast(base.muted, base.app, 4.5);
-    hc.faint  = ensureContrast(base.faint, base.app, 3.0);
-    hc.accent = ensureContrast(base.accent, base.app, 4.5);
-    hc.danger = ensureContrast(base.danger, base.app, 4.5);
-    hc.onAccent = ensureContrast(QColor(Qt::white), hc.accent, 4.5);
-    // Flatten translucent fills to solids for HC.
-    hc.cardHover = dark ? base.card.lighter(130) : base.card.darker(110);
+    hc.muted  = ensureContrast(base.muted, hc.app, 4.5);
+    hc.faint  = ensureContrast(base.faint, hc.app, 4.5);
+    hc.accent = ensureContrast(base.accent, hc.app, 4.5);
+    hc.danger = ensureContrast(base.danger, hc.app, 4.5);
+    hc.onAccent = ensureContrast(dark ? QColor(Qt::white) : QColor(Qt::black),
+                                 hc.accent, 4.5);
     hc.selectionBar = hc.accent;
+    hc.accentDim = hc.accent;
     return hc;
 }
 
-Tokens buildTokens(const QString &paletteId, Mode mode, Density density)
+Tokens buildTokens(const QString &paletteId, Mode mode, Density density,
+                   bool hcFromLight)
 {
     const PaletteDef pal = paletteById(paletteId);
     Tokens t;
@@ -125,24 +143,24 @@ Tokens buildTokens(const QString &paletteId, Mode mode, Density density)
     t.mode = mode;
     t.density = density;
 
-    Colors base = (mode == Mode::Light) ? pal.light : pal.dark;
-    // HighContrast is derived from the light/dark base of the same family.
+    Colors base;
     if (mode == Mode::HighContrast) {
-        // Prefer dark base for HC-dark feel when system is dark; callers pick.
-        // Convention: HighContrast derives from dark unless palette was light.
-        base = deriveHighContrast(pal.dark);
+        // Derive from the mode the user was in — dark→HC-dark, light→HC-light.
+        // AA hardening below is skipped: deriveHighContrast already forces
+        // pure surfaces and AA text/border/accent.
+        base = deriveHighContrast(hcFromLight ? pal.light : pal.dark);
     } else if (mode == Mode::Light) {
         base = pal.light;
-        // Harden light text roles against white cards / pale app bg.
         base.text  = ensureContrast(base.text,  base.card, 4.5);
         base.muted = ensureContrast(base.muted, base.card, 4.5);
         base.faint = ensureContrast(base.faint, base.card, 3.0);
         base.accent = ensureContrast(base.accent, base.card, 3.0);
         base.onAccent = ensureContrast(base.onAccent, base.accent, 4.5);
-        base.border = ensureContrast(base.border, base.card, 1.4);
-        // If border still too soft vs card, deepen slightly.
-        if (contrastRatio(base.border, base.card) < 1.4)
-            base.border = base.border.darker(120);
+        base.border = ensureContrast(base.border, base.card, 2.0);
+        if (contrastRatio(base.border, base.card) < 2.0)
+            base.border = base.border.darker(125);
+        if (contrastRatio(base.cardHover, base.card) < 1.15)
+            base.cardHover = base.card.darker(108);
     } else {
         base = pal.dark;
     }

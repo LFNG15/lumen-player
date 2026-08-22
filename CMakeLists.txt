@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(LumenMusic
-    VERSION 2.0.0
+    VERSION 2.0.1
     DESCRIPTION "Lumen Music"
     LANGUAGES CXX)
 
@@ -46,7 +46,6 @@ set(PROJECT_SOURCES
     src/design/palettes.cpp
     src/design/thememanager.cpp
     src/design/stylesheet.cpp
-    src/design/components.cpp
     src/design/paint.cpp
     src/design/i18n.cpp
     src/mainwindow.cpp
@@ -81,7 +80,6 @@ set(PROJECT_HEADERS
     src/design/palettes.h
     src/design/thememanager.h
     src/design/stylesheet.h
-    src/design/components.h
     src/design/paint.h
     src/design/icons.h
     src/design/i18n.h
@@ -114,6 +112,7 @@ set(PROJECT_HEADERS
     src/widgets/lang.h
     src/widgets/coverwidget.h
     src/widgets/textutils.h
+    src/widgets/greeting.h
 )
 
 qt_add_executable(LumenMusic
@@ -323,6 +322,10 @@ if(LUMEN_BUILD_TESTS)
     lumen_add_test(test_textutils
         tests/test_textutils.cpp)
 
+    lumen_add_test(test_greeting
+        tests/test_greeting.cpp
+        src/design/i18n.cpp)
+
     lumen_add_test(test_position_gap
         tests/test_position_gap.cpp)
 
@@ -354,4 +357,19 @@ if(LUMEN_BUILD_TESTS)
         src/design/stylesheet.cpp
         src/design/paint.cpp)
     target_link_libraries(test_database_playlist PRIVATE Qt6::Network)
+
+    lumen_add_test(test_ytdlp_version
+        tests/test_ytdlp_version.cpp)
+
+    lumen_add_test(test_playback_state
+        tests/test_playback_state.cpp
+        src/database/database.cpp
+        src/database/migrator.cpp
+        src/player/trackmodel.cpp
+        src/design/tokens.cpp
+        src/design/palettes.cpp
+        src/design/thememanager.cpp
+        src/design/stylesheet.cpp
+        src/design/paint.cpp)
+    target_link_libraries(test_playback_state PRIVATE Qt6::Network)
 endif()

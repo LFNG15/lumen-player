@@ -1,4 +1,5 @@
 #include "design/stylesheet.h"
+#include "design/icons.h"
 #include "folderspage.h"
 #include "lang.h"
 #include <QLabel>
@@ -63,15 +64,26 @@ void FoldersPage::refresh() {
         delete item;
     }
 
-    // Header row: title + create button
+    // Header row: back + title + create button (rebuilt each refresh()).
     auto *headerRow = new QHBoxLayout();
+    auto *backBtn = new QPushButton(lumen::design::Icons::back());
+    backBtn->setFixedSize(34, 34);
+    backBtn->setCursor(Qt::PointingHandCursor);
+    backBtn->setFont(Theme::iconFont(12));
+    lumen::design::StyleSheet::apply(backBtn, QString(
+        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.1) + "; }"
+    ).arg(Theme::text().name()));
+    connect(backBtn, &QPushButton::clicked, this, &FoldersPage::navigateBack);
+    headerRow->addWidget(backBtn);
+
     auto *title = new QLabel(Lang::tr("Playlists"));
     title->setFont(Theme::titleFont(28));
     lumen::design::StyleSheet::apply(title, QString("color: %1; background: transparent;").arg(Theme::text().name()));
     headerRow->addWidget(title);
     headerRow->addStretch();
 
-    auto *createBtn = new QPushButton(QString("\uE109  ") + Lang::tr(Lang::tr("Nova Playlist")));
+    auto *createBtn = new QPushButton(QString("\uE109  ") + Lang::tr("Nova Playlist"));
     createBtn->setFixedHeight(36);
     createBtn->setCursor(Qt::PointingHandCursor);
     createBtn->setFont(Theme::bodyFont(12));
@@ -288,7 +300,7 @@ void FoldersPage::refresh() {
 void FoldersPage::showCreateDialog() {
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(Lang::tr("Nova Playlist"));
-    dlg->setFixedSize(380, 270);
+    dlg->setMinimumWidth(380);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
@@ -413,13 +425,14 @@ void FoldersPage::showCreateDialog() {
 
     connect(dlg, &QDialog::rejected, [c1, c2, imagePath]() { delete c1; delete c2; delete imagePath; });
     connect(nameEdit, &QLineEdit::returnPressed, createBtn2, &QPushButton::click);
+    dlg->adjustSize();
     dlg->exec();
 }
 
 void FoldersPage::showRenameDialog(int id, const QString &currentName) {
     auto *dlg = new QDialog(this);
     dlg->setWindowTitle(Lang::tr("Renomear Playlist"));
-    dlg->setFixedSize(340, 140);
+    dlg->setMinimumWidth(340);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     lumen::design::StyleSheet::apply(dlg, QString(
         "QDialog { background: %1; }"
@@ -469,6 +482,7 @@ void FoldersPage::showRenameDialog(int id, const QString &currentName) {
     layout->addLayout(btnRow);
 
     connect(nameEdit, &QLineEdit::returnPressed, saveBtn, &QPushButton::click);
+    dlg->adjustSize();
     dlg->exec();
 }
 

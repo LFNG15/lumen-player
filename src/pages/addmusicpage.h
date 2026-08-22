@@ -75,6 +75,7 @@ private:
     QString      m_downloadPrefix;
     QString      m_lastDownloadOutput;
     QString      m_downloadFolderFullText;
+    bool         m_downloadRetried = false;
 };
 
 #endif // ADDMUSICPAGE_H

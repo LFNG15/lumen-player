@@ -2,12 +2,14 @@
 #include "lang.h"
 #include "theme.h"
 #include "design/stylesheet.h"
+#include "design/icons.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QResizeEvent>
 #include <QSizePolicy>
 #include <QFontMetrics>
+#include <QSignalBlocker>
 
 PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     : QWidget(parent)
@@ -74,9 +76,10 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     m_prevBtn    = new QPushButton(QStringLiteral("\uE100"), this);
     m_playBtn    = new QPushButton(QStringLiteral("\uE102"), this);
     m_nextBtn    = new QPushButton(QStringLiteral("\uE101"), this);
+    m_likeBtn    = new QPushButton(lumen::design::Icons::heartOutline(), this);
     m_repeatBtn  = new QPushButton(QStringLiteral("\uE1CD"), this);
 
-    for (auto *btn : {m_shuffleBtn, m_prevBtn, m_nextBtn, m_repeatBtn}) {
+    for (auto *btn : {m_shuffleBtn, m_prevBtn, m_nextBtn, m_likeBtn, m_repeatBtn}) {
         btn->setFixedSize(32, 32);
         btn->setCursor(Qt::PointingHandCursor);
         lumen::design::StyleSheet::apply(btn, buttonStyle(false));
@@ -93,6 +96,7 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     btnLayout->addWidget(m_prevBtn);
     btnLayout->addWidget(m_playBtn);
     btnLayout->addWidget(m_nextBtn);
+    btnLayout->addWidget(m_likeBtn);
     btnLayout->addWidget(m_repeatBtn);
     centerLayout->addLayout(btnLayout);
 
@@ -132,7 +136,7 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     m_queueBtn->setFixedSize(24, 24);
     m_queueBtn->setCursor(Qt::PointingHandCursor);
     m_queueBtn->setFont(Theme::iconFont(14));
-    m_queueBtn->setToolTip(Lang::tr("Fila de reprodução"));
+    Lang::bindToolTip(m_queueBtn, QStringLiteral("Fila de reprodução"));
     lumen::design::StyleSheet::apply(m_queueBtn, QString(
         "QPushButton { background: transparent; color: %1; border: none; border-radius: 4px; }"
         "QPushButton:hover { color: %2; background: " + Theme::hoverBg(0.05) + "; }"
@@ -167,7 +171,8 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     lumen::design::StyleSheet::apply(m_rightWidget, QStringLiteral("background: transparent;"));
     mainLayout->addWidget(m_rightWidget, 0);
 
-    m_emptyLabel = new QLabel(Lang::tr("Adicione músicas para começar a ouvir"), this);
+    m_emptyLabel = new QLabel(this);
+    Lang::bindText(m_emptyLabel, QStringLiteral("Adicione músicas para começar a ouvir"));
     m_emptyLabel->setFont(Theme::bodyFont(12));
     lumen::design::StyleSheet::apply(m_emptyLabel, QString(
         "color: %1; background: transparent;").arg(Theme::textMuted().name()));
@@ -184,6 +189,8 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     });
     connect(m_repeatBtn, &QPushButton::clicked, m_engine, &PlaybackEngine::cycleRepeatMode);
     connect(m_queueBtn, &QPushButton::clicked, this, &PlayerBar::queueRequested);
+    connect(m_likeBtn, &QPushButton::clicked, this, &PlayerBar::likeClicked);
+    Lang::bind(m_likeBtn, [this]() { setLikedState(m_likeHasTrack, m_liked); });
 
     connect(m_progressSlider, &QSlider::sliderMoved, this, [this](int val) {
         const qint64 dur = m_engine->duration();
@@ -193,8 +200,15 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     connect(m_volIcon, &QPushButton::clicked, this, [this]() {
         m_engine->setMuted(!m_engine->isMuted());
     });
-    connect(m_volumeSlider, &QSlider::sliderMoved, this, [this](int val) {
-        m_engine->setVolume(val / 100.0);
+    // valueChanged (not sliderMoved): mouse wheel and keyboard also persist.
+    // ClickableSlider still re-emits sliderMoved on click, but that would miss
+    // wheel/arrow changes. Do not connect the progress slider this way — it
+    // would seek in a loop when positionChanged writes the slider.
+    connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int val) {
+        const double v = val / 100.0;
+        if (qAbs(m_engine->volume() - v) < 0.005)
+            return;
+        m_engine->setVolume(v);
         if (m_engine->isMuted())
             m_engine->setMuted(false);
     });
@@ -227,25 +241,29 @@ PlayerBar::PlayerBar(PlaybackEngine *engine, QWidget *parent)
     connect(m_engine, &PlaybackEngine::shuffleChanged, this, [this](bool on) {
         lumen::design::StyleSheet::apply(m_shuffleBtn, buttonStyle(on));
     });
-    connect(m_engine, &PlaybackEngine::repeatModeChanged, this,
-            [this](PlaybackEngine::RepeatMode mode) {
+    auto applyRepeatTip = [this]() {
+        const auto mode = m_engine->repeatMode();
         const bool active = mode != PlaybackEngine::RepeatMode::Off;
         lumen::design::StyleSheet::apply(m_repeatBtn, buttonStyle(active));
-        // Glyph hint: one vs all (same family; tooltips distinguish).
         if (mode == PlaybackEngine::RepeatMode::One)
             m_repeatBtn->setToolTip(Lang::tr("Repetir uma"));
         else if (mode == PlaybackEngine::RepeatMode::All)
             m_repeatBtn->setToolTip(Lang::tr("Repetir todas"));
         else
             m_repeatBtn->setToolTip(Lang::tr("Repetir"));
-    });
+    };
+    connect(m_engine, &PlaybackEngine::repeatModeChanged, this,
+            [applyRepeatTip](PlaybackEngine::RepeatMode) { applyRepeatTip(); });
+    Lang::bind(m_repeatBtn, applyRepeatTip);
     connect(m_engine, &PlaybackEngine::volumeChanged, this, [this](double v) {
+        const QSignalBlocker blocker(m_volumeSlider);
         m_volumeSlider->setValue(static_cast<int>(v * 100));
         updateVolIcon();
     });
     connect(m_engine, &PlaybackEngine::mutedChanged, this, [this](bool) {
         updateVolIcon();
     });
+    Lang::bind(m_volIcon, [this]() { updateVolIcon(); });
 }
 
 void PlayerBar::resizeEvent(QResizeEvent *event)
@@ -301,6 +319,7 @@ void PlayerBar::applyResponsiveLayout(int width)
 
     if (m_shuffleBtn) m_shuffleBtn->setVisible(!narrow);
     if (m_repeatBtn)  m_repeatBtn->setVisible(!narrow);
+    if (m_likeBtn)    m_likeBtn->setVisible(!narrow);
 }
 
 void PlayerBar::showEmptyUi()
@@ -333,7 +352,10 @@ void PlayerBar::syncTransportUi()
     m_playBtn->setText(m_engine->isPlaying() ? QStringLiteral("\uE103")
                                              : QStringLiteral("\uE102"));
     m_vinyl->setSpinning(m_engine->isPlaying());
-    m_volumeSlider->setValue(static_cast<int>(m_engine->volume() * 100));
+    {
+        const QSignalBlocker blocker(m_volumeSlider);
+        m_volumeSlider->setValue(static_cast<int>(m_engine->volume() * 100));
+    }
     updateVolIcon();
 }
 
@@ -366,6 +388,20 @@ void PlayerBar::restoreSession()
     else
         showEmptyUi();
     syncTransportUi();
+}
+
+void PlayerBar::setLikedState(bool hasTrack, bool liked)
+{
+    m_likeHasTrack = hasTrack;
+    m_liked = liked;
+    if (!m_likeBtn) return;
+    m_likeBtn->setEnabled(hasTrack);
+    m_likeBtn->setText(liked ? lumen::design::Icons::heart()
+                             : lumen::design::Icons::heartOutline());
+    lumen::design::StyleSheet::apply(m_likeBtn, buttonStyle(hasTrack && liked));
+    m_likeBtn->setToolTip(hasTrack
+        ? (liked ? Lang::tr("Descurtir") : Lang::tr("Curtir"))
+        : QString());
 }
 
 void PlayerBar::updateVolIcon()

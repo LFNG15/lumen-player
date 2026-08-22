@@ -55,6 +55,8 @@ private:
     QList<Binding> m_bindings;
 };
 
+bool englishDictContains(const QString &pt);
+
 } // namespace lumen::design
 
 #endif // LUMEN_DESIGN_I18N_H

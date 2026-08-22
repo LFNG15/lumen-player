@@ -2,11 +2,13 @@
 #include "lang.h"
 #include "theme.h"
 #include "design/stylesheet.h"
+#include "design/icons.h"
 #include "models/tracklistmodel.h"
 #include "models/trackrowdelegate.h"
 #include "models/trackcontextmenu.h"
 
 #include <QLabel>
+#include <QPushButton>
 #include <QVBoxLayout>
 #include <QListView>
 #include <QShortcut>
@@ -27,13 +29,29 @@ LibraryPage::LibraryPage(TrackModel *model, QWidget *parent)
     headerLayout->setContentsMargins(32, 28, 32, 12);
     headerLayout->setSpacing(4);
 
-    auto *title = new QLabel(Lang::tr("Biblioteca Completa"), m_header);
+    auto *backBtn = new QPushButton(lumen::design::Icons::back(), m_header);
+    backBtn->setFixedSize(34, 34);
+    backBtn->setCursor(Qt::PointingHandCursor);
+    backBtn->setFont(Theme::iconFont(12));
+    lumen::design::StyleSheet::apply(backBtn, QString(
+        "QPushButton { background: " + Theme::hoverBg(0.05) + "; color: %1; border: none; border-radius: 17px; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.1) + "; }"
+    ).arg(Theme::text().name()));
+    connect(backBtn, &QPushButton::clicked, this, &LibraryPage::navigateBack);
+    headerLayout->addWidget(backBtn, 0, Qt::AlignLeft);
+
+    auto *title = new QLabel(m_header);
+    Lang::bindText(title, QStringLiteral("Biblioteca Completa"));
     title->setFont(Theme::titleFont(28));
     lumen::design::StyleSheet::apply(title, QString(
         "color: %1; background: transparent;").arg(Theme::text().name()));
     headerLayout->addWidget(title);
 
     m_countLabel = new QLabel(m_header);
+    Lang::bind(m_countLabel, [this]() {
+        const int n = m_listModel ? m_listModel->rowCount() : 0;
+        m_countLabel->setText(QString(Lang::tr("%1 faixa%2")).arg(n).arg(n != 1 ? "s" : ""));
+    });
     m_countLabel->setFont(Theme::bodyFont(12));
     lumen::design::StyleSheet::apply(m_countLabel, QString(
         "color: %1; background: transparent;").arg(Theme::textSoft().name()));

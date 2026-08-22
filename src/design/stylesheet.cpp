@@ -48,14 +48,12 @@ QString StyleSheet::build(const Tokens &t)
     const auto &c = t.color;
     const auto &m = t.metric;
     const int bw = m.borderWidth;
-    // Light mode: accent hover should deepen, not wash out further.
-    const QString accentHover = (t.mode == Mode::Light)
+    const bool lightish = c.app.lightness() > 128;
+    // Light (and HC-light): accent hover should deepen, not wash out.
+    const QString accentHover = lightish
         ? c.accent.darker(112).name()
         : c.accent.lighter(110).name();
-    // Surface hover: black wash on light, white wash on dark.
-    const QString surfaceHover = (t.mode == Mode::Light)
-        ? QStringLiteral("rgba(0,0,0,0.06)")
-        : QStringLiteral("rgba(255,255,255,0.06)");
+    const QString surfaceHover = c.cardHover.name();
 
     return QStringLiteral(R"(
         /* --- Global chrome (Lumen design system) --- */
@@ -145,6 +143,9 @@ QString StyleSheet::build(const Tokens &t)
             border-radius: %6px;
             border: %14px solid %4;
         }
+        QWidget#lumenCard:hover, QFrame#lumenCard:hover {
+            background-color: %19;
+        }
         QWidget#lumenHighlightCard {
             background-color: %9;
             border-radius: %6px;
@@ -163,6 +164,7 @@ QString StyleSheet::build(const Tokens &t)
         }
         QLineEdit:focus, QTextEdit:focus, QComboBox:focus {
             border-color: %10;
+            border-width: %14px;
         }
         QWidget#lumenSearchPill {
             background-color: %9;
@@ -262,8 +264,8 @@ QString StyleSheet::build(const Tokens &t)
              accentHover,                           // %15
              c.faint.name(),                        // %16
              c.input.name(),                        // %17
-             accentRgba(t, 0.15));                  // %18
-    Q_UNUSED(surfaceHover);
+             accentRgba(t, 0.15),                   // %18
+             surfaceHover);                         // %19
 }
 
 } // namespace lumen::design

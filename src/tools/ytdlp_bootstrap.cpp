@@ -13,6 +13,10 @@
 #include <QCryptographicHash>
 #include <QUrl>
 #include <QDebug>
+#include <QProcess>
+#include <QSettings>
+#include <QDateTime>
+#include <functional>
 
 namespace lumen::tools {
 
@@ -21,7 +25,7 @@ namespace {
 // Pin a known-good release. Bump periodically when YouTube breaks old builds.
 // Checksums: https://github.com/yt-dlp/yt-dlp/releases/tag/<tag>
 // SHA256 of yt-dlp.exe for windows (updated when the pin moves).
-constexpr char kReleaseTag[] = "2025.10.14";
+constexpr char kReleaseTag[] = "2026.08.19";
 // Empty SHA disables verification (not recommended). Fill from release assets.
 // If empty, we still download but log a warning — better than shipping a stale binary.
 constexpr char kExpectedSha256[] =
@@ -153,6 +157,51 @@ QString downloadManaged(QString *errorMsg)
     return dest;
 }
 
+constexpr qint64 kMinUpdateIntervalMs = 6LL * 60 * 60 * 1000;
+const char kLastUpdateKey[] = "ytdlpLastUpdateCheck";
+bool g_updatedThisSession = false;
+
+void markUpdateAttempt()
+{
+    g_updatedThisSession = true;
+    QSettings s;
+    s.setValue(QLatin1String(kLastUpdateKey), QDateTime::currentMSecsSinceEpoch());
+}
+
+bool shouldAttemptProactiveUpdate()
+{
+    if (g_updatedThisSession)
+        return false;
+    QSettings s;
+    const qint64 last = s.value(QLatin1String(kLastUpdateKey)).toLongLong();
+    if (last <= 0)
+        return true;
+    return (QDateTime::currentMSecsSinceEpoch() - last) >= kMinUpdateIntervalMs;
+}
+
+QString queryYtDlpVersion(const QString &binary)
+{
+    QProcess p;
+    p.setProgram(binary);
+    p.setArguments({QStringLiteral("--version")});
+    p.start();
+    if (!p.waitForFinished(8000)) {
+        p.kill();
+        p.waitForFinished(1000);
+        return {};
+    }
+    const QString out = QString::fromUtf8(p.readAllStandardOutput() + p.readAllStandardError()).trimmed();
+    return out.section(QLatin1Char('\n'), 0, 0).trimmed();
+}
+
+void emitStatus(const std::function<void(const QString &)> &statusCb, const QString &pt)
+{
+    if (!statusCb)
+        return;
+    statusCb(pt);
+    QCoreApplication::processEvents();
+}
+
 } // namespace
 
 QString ytdlpToolsDir()
@@ -167,7 +216,11 @@ QString ytdlpToolsDir()
 
 QString findYtDlpExisting()
 {
-    // 1) Next to the app (portable / old installs)
+    // 1) Managed bootstrap location — the app controls this copy.
+    const QString managed = ytdlpToolsDir() + QStringLiteral("/yt-dlp.exe");
+    if (QFileInfo::exists(managed))
+        return managed;
+    // 2) Next to the app (portable / old installs) — never preferred over managed.
     const QString appDir = QCoreApplication::applicationDirPath();
     for (const QString &c : {
              QDir(appDir).filePath(QStringLiteral("yt-dlp.exe")),
@@ -175,10 +228,6 @@ QString findYtDlpExisting()
         if (QFileInfo::exists(c))
             return QDir::cleanPath(c);
     }
-    // 2) Managed bootstrap location
-    const QString managed = ytdlpToolsDir() + QStringLiteral("/yt-dlp.exe");
-    if (QFileInfo::exists(managed))
-        return managed;
     // 3) PATH
     const QString onPath = QStandardPaths::findExecutable(QStringLiteral("yt-dlp"));
     if (!onPath.isEmpty())
@@ -194,13 +243,53 @@ QString ensureYtDlp(QString *errorMsg)
     const QString existing = findYtDlpExisting();
     if (!existing.isEmpty())
         return existing;
-    return downloadManaged(errorMsg);
+    const QString downloaded = downloadManaged(errorMsg);
+    if (!downloaded.isEmpty())
+        markUpdateAttempt();
+    return downloaded;
 }
 
 QString updateYtDlp(QString *errorMsg)
 {
     // Always re-download the pinned release into the tools dir.
-    return downloadManaged(errorMsg);
+    const QString path = downloadManaged(errorMsg);
+    if (!path.isEmpty())
+        markUpdateAttempt();
+    return path;
+}
+
+QString ensureFreshYtDlp(QString *errorMsg,
+                         const std::function<void(const QString &ptStatus)> &statusCb)
+{
+    const QString pin = QString::fromLatin1(kReleaseTag);
+    const QString existing = findYtDlpExisting();
+    if (existing.isEmpty()) {
+        emitStatus(statusCb, QStringLiteral("Atualizando ferramenta de download…"));
+        return ensureYtDlp(errorMsg);
+    }
+
+    const QString ver = queryYtDlpVersion(existing);
+    if (compareYtDlpVersion(ver, pin) >= 0)
+        return existing;
+
+    if (!shouldAttemptProactiveUpdate())
+        return existing;
+
+    emitStatus(statusCb, QStringLiteral("Atualizando ferramenta de download…"));
+    QString err;
+    const QString updated = updateYtDlp(&err);
+    if (updated.isEmpty()) {
+        if (errorMsg) *errorMsg = err;
+        return existing; // keep the old binary rather than fail the download
+    }
+    return updated;
+}
+
+QString updateYtDlpAfterFailure(QString *errorMsg)
+{
+    if (g_updatedThisSession)
+        return {};
+    return updateYtDlp(errorMsg);
 }
 
 } // namespace lumen::tools

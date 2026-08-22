@@ -49,6 +49,7 @@ private:
     Mode    m_mode = Mode::Dark;
     Density m_density = Density::Comfortable;
     bool    m_reduceMotion = false;
+    bool    m_hcFromLight = false;
     Tokens  m_tokens;
 };
 

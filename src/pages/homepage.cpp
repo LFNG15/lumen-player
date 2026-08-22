@@ -5,6 +5,7 @@
 #include "models/trackcontextmenu.h"
 #include "models/trackrowdelegate.h"
 #include <QLabel>
+#include <QSizePolicy>
 #include <QPushButton>
 #include <QGridLayout>
 #include <QPainter>
@@ -17,6 +18,8 @@
 #include <QListView>
 #include <QWheelEvent>
 #include "coverwidget.h"
+#include "greeting.h"
+#include <QRandomGenerator>
 
 // A shelf QListView never scrolls itself — wheel events pass through to the
 // page's outer QScrollArea instead of getting stuck in a (possibly slightly
@@ -71,12 +74,12 @@ HomePage::HomePage(TrackModel *model, QWidget *parent)
     m_dynamicLayout->setSpacing(12);
     contentLayout->addWidget(m_dynamicRegion);
 
-    m_playedSection = buildShelf(Lang::tr("Tocadas recentemente"),
+    m_playedSection = buildShelf(QStringLiteral("Tocadas recentemente"),
         TrackListModel::Source::RecentlyPlayed, 8,
         &m_playedView, &m_playedModel);
     contentLayout->addWidget(m_playedSection);
 
-    m_addedSection = buildShelf(Lang::tr("Adicionadas recentemente"),
+    m_addedSection = buildShelf(QStringLiteral("Adicionadas recentemente"),
         TrackListModel::Source::RecentlyAdded, 8,
         &m_addedView, &m_addedModel);
     contentLayout->addWidget(m_addedSection);
@@ -91,9 +94,21 @@ int HomePage::chipColumnsForWidth(int w) const
     return qBound(1, (qMax(240, w - 64) + 8) / 208, 4);
 }
 
+void HomePage::applyGreetingLayout()
+{
+    if (!m_greetLabel) return;
+    const int viewW = m_scroll ? m_scroll->viewport()->width() : width();
+    const int avail = qMax(80, viewW - 64);
+    // 16pt at ~280px of content, 28pt at >= 720px — every pixel of resize counts.
+    const int pt = qBound(16, 16 + (avail - 280) * 12 / 440, 28);
+    m_greetLabel->setFont(Theme::titleFont(pt));
+    m_greetLabel->setMaximumWidth(avail);
+}
+
 void HomePage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+    applyGreetingLayout();
     const int cols = chipColumnsForWidth(width());
     if (cols != m_lastChipCols && m_lastChipCols >= 0) {
         m_lastChipCols = cols;
@@ -112,7 +127,8 @@ QWidget *HomePage::buildShelf(const QString &labelText, TrackListModel::Source::
     sectionLayout->setContentsMargins(0, 0, 0, 0);
     sectionLayout->setSpacing(4);
 
-    auto *label = new QLabel(labelText, section);
+    auto *label = new QLabel(section);
+    Lang::bindText(label, labelText);
     label->setFont(Theme::titleFont(18));
     lumen::design::StyleSheet::apply(label, QString(
         "color: %1; background: transparent; padding-top: 8px;").arg(Theme::text().name()));
@@ -231,6 +247,8 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     m_lastPlaying = isPlaying;
     m_lastChipCols = chipColumnsForWidth(width());
 
+    m_greetLabel = nullptr;
+
     // Clear only the dynamic region (greeting/chips/recents) — the three track
     // lists below reload() their existing models instead of being torn down.
     QLayoutItem *item;
@@ -247,12 +265,17 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     }
 
     // Greeting
-    int hour = QTime::currentTime().hour();
-    QString greeting = hour < 12 ? Lang::tr("Bom dia") : (hour < 18 ? Lang::tr("Boa tarde") : Lang::tr("Boa noite"));
-    auto *greetLabel = new QLabel(greeting);
-    greetLabel->setFont(Theme::titleFont(28));
-    lumen::design::StyleSheet::apply(greetLabel, QString("color: %1; background: transparent; padding-bottom: 8px;").arg(Theme::text().name()));
-    m_dynamicLayout->addWidget(greetLabel);
+    const int hour = QTime::currentTime().hour();
+    const int nVar = greetingVariantCount(hour);
+    const int variant = QRandomGenerator::global()->bounded(qMax(1, nVar));
+    const QString greeting = Lang::tr(greetingPtFor(hour, variant));
+    m_greetLabel = new QLabel(greeting);
+    m_greetLabel->setWordWrap(true);
+    m_greetLabel->setMinimumWidth(0);
+    m_greetLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    lumen::design::StyleSheet::apply(m_greetLabel, QString("color: %1; background: transparent; padding-bottom: 8px;").arg(Theme::text().name()));
+    m_dynamicLayout->addWidget(m_greetLabel);
+    applyGreetingLayout();
 
     if (m_model->tracks().isEmpty()) {
         // Empty state

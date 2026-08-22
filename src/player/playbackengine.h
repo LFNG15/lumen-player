@@ -8,6 +8,7 @@
 
 class QMediaPlayer;
 class QAudioOutput;
+class QTimer;
 
 // Playback engine (P4): owns QMediaPlayer, context queue, manual queue,
 // shuffle bag, and repeat modes. PlayerBar is a pure view over this object.
@@ -75,6 +76,7 @@ signals:
     void repeatModeChanged(RepeatMode mode);
     void volumeChanged(double volume01);
     void mutedChanged(bool muted);
+    void playbackError(const QString &message);
 
 private slots:
     void onMediaStatusChanged(int status); // QMediaPlayer::MediaStatus
@@ -86,6 +88,10 @@ private:
     void rebuildShuffleBag();
     int  nextShuffleIndex();
     int  findInContext(int trackId) const;
+    void markStateDirty();
+    void startPendingRestore();
+    void applyPendingSeekIfReady();
+    void reportInvalidMedia();
 
     TrackModel   *m_model  = nullptr;
     QMediaPlayer *m_player = nullptr;
@@ -107,6 +113,11 @@ private:
     // until the bag is exhausted, then reshuffles (like a deck).
     QVector<int> m_shuffleBag;
     int          m_shufflePos = 0;
+
+    QTimer *m_persistTimer = nullptr;
+    bool    m_stateDirty   = false;
+    bool    m_restorePending = false;
+    bool    m_errorNotified  = false;
 };
 
 #endif // PLAYBACKENGINE_H
