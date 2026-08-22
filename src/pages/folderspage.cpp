@@ -83,7 +83,7 @@ void FoldersPage::refresh() {
     headerRow->addWidget(title);
     headerRow->addStretch();
 
-    auto *createBtn = new QPushButton(QString("\uE109  ") + Lang::tr(Lang::tr("Nova Playlist")));
+    auto *createBtn = new QPushButton(QString("\uE109  ") + Lang::tr("Nova Playlist"));
     createBtn->setFixedHeight(36);
     createBtn->setCursor(Qt::PointingHandCursor);
     createBtn->setFont(Theme::bodyFont(12));
