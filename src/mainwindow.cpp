@@ -296,6 +296,9 @@ MainWindow::MainWindow(QWidget *parent)
         else showQueuePanel();
     });
     connect(m_playerBar, &PlayerBar::queueChanged, this, [this]() { refreshCurrentPage(); });
+    connect(m_engine, &PlaybackEngine::playbackError, this, [this](const QString &msg) {
+        showToast(Lang::tr(msg));
+    });
 
     // Model changes — keep the count label, the visible page, and the sidebar
     // in sync so edits (cover image/colors, rename, etc.) reflect immediately.

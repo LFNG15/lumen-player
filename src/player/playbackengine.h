@@ -76,6 +76,7 @@ signals:
     void repeatModeChanged(RepeatMode mode);
     void volumeChanged(double volume01);
     void mutedChanged(bool muted);
+    void playbackError(const QString &message);
 
 private slots:
     void onMediaStatusChanged(int status); // QMediaPlayer::MediaStatus
@@ -88,6 +89,9 @@ private:
     int  nextShuffleIndex();
     int  findInContext(int trackId) const;
     void markStateDirty();
+    void startPendingRestore();
+    void applyPendingSeekIfReady();
+    void reportInvalidMedia();
 
     TrackModel   *m_model  = nullptr;
     QMediaPlayer *m_player = nullptr;
@@ -112,6 +116,8 @@ private:
 
     QTimer *m_persistTimer = nullptr;
     bool    m_stateDirty   = false;
+    bool    m_restorePending = false;
+    bool    m_errorNotified  = false;
 };
 
 #endif // PLAYBACKENGINE_H

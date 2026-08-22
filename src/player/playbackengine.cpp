@@ -33,6 +33,11 @@ PlaybackEngine::PlaybackEngine(TrackModel *model, QObject *parent)
             this, [this](QMediaPlayer::PlaybackState st) {
         onPlaybackStateChanged(static_cast<int>(st));
     });
+    connect(m_player, &QMediaPlayer::errorOccurred, this,
+            [this](QMediaPlayer::Error, const QString &str) {
+        qWarning() << "QMediaPlayer error" << str << m_currentTrack.audioUrl;
+        reportInvalidMedia();
+    });
 
     // Windows logoff/kill skip closeEvent; persist dirty state every ~30s.
     m_persistTimer = new QTimer(this);
@@ -74,6 +79,8 @@ void PlaybackEngine::playKeepingContext(const Track &track)
 
 void PlaybackEngine::loadAndPlay(const Track &track, bool markPlayed)
 {
+    m_restorePending = false;
+    m_errorNotified  = false;
     m_currentTrackId = track.id;
     m_currentTrack   = track;
     m_pendingSeekMs  = 0;
@@ -99,11 +106,23 @@ void PlaybackEngine::togglePlay()
 {
     if (m_currentTrackId == 0) return;
 
+    if (m_restorePending) {
+        startPendingRestore();
+        return;
+    }
+
+    if (m_player->mediaStatus() == QMediaPlayer::InvalidMedia
+        || m_player->error() != QMediaPlayer::NoError) {
+        reportInvalidMedia();
+        return;
+    }
+
     if (m_player->playbackState() == QMediaPlayer::PlayingState) {
         m_player->pause();
         emit playingChanged(false);
     } else {
         m_player->play();
+        applyPendingSeekIfReady();
         emit playingChanged(true);
     }
     markStateDirty();
@@ -118,6 +137,11 @@ void PlaybackEngine::stop()
 void PlaybackEngine::seek(qint64 ms)
 {
     if (m_currentTrackId == 0) return;
+    if (m_restorePending) {
+        m_pendingSeekMs = ms;
+        startPendingRestore();
+        return;
+    }
     m_player->setPosition(ms);
     markStateDirty();
 }
@@ -369,8 +393,18 @@ bool PlaybackEngine::isPlaying() const
     return m_player->playbackState() == QMediaPlayer::PlayingState;
 }
 
-qint64 PlaybackEngine::position() const { return m_player->position(); }
-qint64 PlaybackEngine::duration() const { return m_player->duration(); }
+qint64 PlaybackEngine::position() const
+{
+    if (m_restorePending && m_pendingSeekMs > 0)
+        return m_pendingSeekMs;
+    return m_player->position();
+}
+qint64 PlaybackEngine::duration() const
+{
+    if (m_restorePending && m_currentTrack.durationMs > 0)
+        return m_currentTrack.durationMs;
+    return m_player->duration();
+}
 
 // --- Media callbacks ----------------------------------------------------------
 
@@ -378,11 +412,10 @@ void PlaybackEngine::onMediaStatusChanged(int status)
 {
     const auto st = static_cast<QMediaPlayer::MediaStatus>(status);
 
-    if ((st == QMediaPlayer::LoadedMedia || st == QMediaPlayer::BufferedMedia)
-        && m_pendingSeekMs > 0) {
-        m_player->setPosition(m_pendingSeekMs);
-        m_pendingSeekMs = 0;
-    }
+    applyPendingSeekIfReady();
+
+    if (st == QMediaPlayer::InvalidMedia)
+        reportInvalidMedia();
 
     if (st == QMediaPlayer::EndOfMedia) {
         if (m_repeat == RepeatMode::One) {
@@ -395,9 +428,45 @@ void PlaybackEngine::onMediaStatusChanged(int status)
     }
 }
 
-void PlaybackEngine::onPlaybackStateChanged(int /*state*/)
+void PlaybackEngine::onPlaybackStateChanged(int state)
 {
-    // playingChanged is emitted from toggle/load; keep this for external control.
+    if (state == static_cast<int>(QMediaPlayer::PlayingState))
+        applyPendingSeekIfReady();
+}
+
+void PlaybackEngine::applyPendingSeekIfReady()
+{
+    if (m_pendingSeekMs <= 0) return;
+    const auto st = m_player->mediaStatus();
+    if (st != QMediaPlayer::LoadedMedia && st != QMediaPlayer::BufferedMedia
+        && st != QMediaPlayer::BufferingMedia)
+        return;
+    m_player->setPosition(m_pendingSeekMs);
+    m_pendingSeekMs = 0;
+}
+
+void PlaybackEngine::startPendingRestore()
+{
+    if (!m_restorePending) return;
+    m_restorePending = false;
+    m_errorNotified  = false;
+    if (m_currentTrack.audioUrl.isEmpty()) {
+        reportInvalidMedia();
+        return;
+    }
+    m_player->setSource(m_currentTrack.audioUrl);
+    m_player->play();
+    applyPendingSeekIfReady();
+    emit playingChanged(true);
+    markStateDirty();
+}
+
+void PlaybackEngine::reportInvalidMedia()
+{
+    emit playingChanged(false);
+    if (m_errorNotified) return;
+    m_errorNotified = true;
+    emit playbackError(QStringLiteral("Não foi possível reproduzir esta faixa"));
 }
 
 // --- Persistence --------------------------------------------------------------
@@ -411,7 +480,8 @@ void PlaybackEngine::persistState()
 {
     Database::PlaybackState s;
     s.trackId    = m_currentTrackId;
-    s.posMs      = m_currentTrackId != 0 ? m_player->position() : 0;
+    s.posMs      = m_currentTrackId == 0 ? 0
+                 : (m_restorePending ? m_pendingSeekMs : m_player->position());
     s.volume     = qBound(0.0, m_audio->volume(), 1.0);
     s.muted      = m_audio->isMuted();
     s.shuffle    = m_shuffle;
@@ -486,16 +556,22 @@ void PlaybackEngine::restoreSession()
     // the saved index no longer lines up.
     m_contextIndex = (s.contextIndex >= 0 && s.contextIndex < m_context.size())
         ? s.contextIndex : findInContext(m_currentTrackId);
-    m_player->setSource(t->audioUrl);
-    m_player->pause();
+    // Lazy-load: setSource+pause() on restore leaves the FFmpeg backend stuck
+    // so the next play() is silent until the user seeks. Keep source+position
+    // and only load on the first play().
     m_pendingSeekMs = s.posMs;
+    m_restorePending = true;
 
     if (m_shuffle)
         rebuildShuffleBag();
 
     emit trackChanged(m_currentTrackId);
     emit playingChanged(false);
+    if (m_pendingSeekMs > 0)
+        emit positionChanged(m_pendingSeekMs);
+    if (m_currentTrack.durationMs > 0)
+        emit durationChanged(m_currentTrack.durationMs);
     m_stateDirty = false;
     qDebug() << "restoreSession track" << m_currentTrackId << "pos" << m_pendingSeekMs
-             << "vol" << s.volume << "ctx" << m_context.size();
+             << "vol" << s.volume << "ctx" << m_context.size() << "lazy";
 }

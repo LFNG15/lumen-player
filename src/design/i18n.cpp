@@ -66,6 +66,7 @@ const QHash<QString, QString> &enDict()
         {QStringLiteral("Roxo Noturno"), QStringLiteral("Night Purple")},
         {QStringLiteral("Cinza Moderno"), QStringLiteral("Modern Gray")},
         {QStringLiteral("Adicione músicas para começar a ouvir"), QStringLiteral("Add songs to start listening")},
+        {QStringLiteral("Não foi possível reproduzir esta faixa"), QStringLiteral("Could not play this track")},
         {QStringLiteral("Fila de reprodução"), QStringLiteral("Playback queue")},
         {QStringLiteral("Silenciar"), QStringLiteral("Mute")},
         {QStringLiteral("Ativar som"), QStringLiteral("Unmute")},
