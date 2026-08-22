@@ -352,7 +352,10 @@ void PlayerBar::syncTransportUi()
     m_playBtn->setText(m_engine->isPlaying() ? QStringLiteral("\uE103")
                                              : QStringLiteral("\uE102"));
     m_vinyl->setSpinning(m_engine->isPlaying());
-    m_volumeSlider->setValue(static_cast<int>(m_engine->volume() * 100));
+    {
+        const QSignalBlocker blocker(m_volumeSlider);
+        m_volumeSlider->setValue(static_cast<int>(m_engine->volume() * 100));
+    }
     updateVolIcon();
 }
 

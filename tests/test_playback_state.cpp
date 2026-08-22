@@ -15,6 +15,7 @@ private slots:
     void roundTrip_emptyLists();
     void roundTrip_volumeBounds();
     void roundTrip_overwrite();
+    void legacySchemaMissingContextColumns();
 
 private:
     QTemporaryDir m_dir;
@@ -122,6 +123,49 @@ void TestPlaybackState::roundTrip_overwrite()
     QCOMPARE(loaded.userQueueIds, QList<int>({6}));
     QCOMPARE(loaded.contextIndex, 0);
     QCOMPARE(loaded.contextName, QStringLiteral("Biblioteca"));
+}
+
+void TestPlaybackState::legacySchemaMissingContextColumns()
+{
+    // Shape of real v2.0.0 user DBs: old repeat CHECK + some ALTERs, but no
+    // context_index / context_name. loadState used to SELECT those columns and
+    // return defaults, wiping a perfectly good persist.
+    QSqlQuery q(QSqlDatabase::database());
+    QVERIFY(q.exec(QStringLiteral("DROP TABLE IF EXISTS playback_state")));
+    QVERIFY(q.exec(QStringLiteral(
+        "CREATE TABLE playback_state ("
+        "  id INTEGER PRIMARY KEY CHECK (id = 1),"
+        "  current_track_id INTEGER NOT NULL DEFAULT 0,"
+        "  position_ms INTEGER NOT NULL DEFAULT 0,"
+        "  volume REAL NOT NULL DEFAULT 0.7 CHECK (volume >= 0.0 AND volume <= 1.0),"
+        "  shuffle INTEGER NOT NULL DEFAULT 0 CHECK (shuffle IN (0,1)),"
+        "  repeat_mode INTEGER NOT NULL DEFAULT 0 CHECK (repeat_mode IN (0,1)),"
+        "  muted INTEGER NOT NULL DEFAULT 0,"
+        "  context_ids TEXT NOT NULL DEFAULT '',"
+        "  user_queue_ids TEXT NOT NULL DEFAULT ''"
+        ")")));
+    QVERIFY(q.exec(QStringLiteral(
+        "INSERT INTO playback_state "
+        "(id, current_track_id, position_ms, volume, context_ids, user_queue_ids) "
+        "VALUES (1, 22, 38761, 1.0, '27,28,29', '22')")));
+
+    const auto loaded = Database::instance().loadState();
+    QCOMPARE(loaded.trackId, 22);
+    QCOMPARE(loaded.posMs, qint64(38761));
+    QCOMPARE(loaded.volume, 1.0);
+    QCOMPARE(loaded.contextIds, QList<int>({27, 28, 29}));
+    QCOMPARE(loaded.userQueueIds, QList<int>({22}));
+
+    Database::PlaybackState s = loaded;
+    s.posMs = 60000;
+    s.volume = 1.0;
+    s.contextName = QStringLiteral("Fila");
+    Database::instance().saveState(s);
+    const auto again = Database::instance().loadState();
+    QCOMPARE(again.trackId, 22);
+    QCOMPARE(again.posMs, qint64(60000));
+    QCOMPARE(again.volume, 1.0);
+    QCOMPARE(again.contextName, QStringLiteral("Fila"));
 }
 
 // QSqlDatabase needs a QCoreApplication (loads the QSQLITE plugin).
