@@ -4,6 +4,8 @@
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QRandomGenerator>
+#include <QTimer>
+#include <QDebug>
 #include <algorithm>
 
 PlaybackEngine::PlaybackEngine(TrackModel *model, QObject *parent)
@@ -14,8 +16,10 @@ PlaybackEngine::PlaybackEngine(TrackModel *model, QObject *parent)
     m_audio  = new QAudioOutput(this);
     m_player->setAudioOutput(m_audio);
 
-    connect(m_player, &QMediaPlayer::positionChanged,
-            this, &PlaybackEngine::positionChanged);
+    connect(m_player, &QMediaPlayer::positionChanged, this, [this](qint64 ms) {
+        m_stateDirty = true;
+        emit positionChanged(ms);
+    });
     connect(m_player, &QMediaPlayer::durationChanged, this, [this](qint64 dur) {
         if (m_currentTrackId != 0 && m_model)
             m_model->setDuration(m_currentTrackId, dur);
@@ -29,6 +33,15 @@ PlaybackEngine::PlaybackEngine(TrackModel *model, QObject *parent)
             this, [this](QMediaPlayer::PlaybackState st) {
         onPlaybackStateChanged(static_cast<int>(st));
     });
+
+    // Windows logoff/kill skip closeEvent; persist dirty state every ~30s.
+    m_persistTimer = new QTimer(this);
+    m_persistTimer->setInterval(30'000);
+    connect(m_persistTimer, &QTimer::timeout, this, [this]() {
+        if (m_stateDirty)
+            persistState();
+    });
+    m_persistTimer->start();
 }
 
 // --- Transport ----------------------------------------------------------------
@@ -39,6 +52,7 @@ void PlaybackEngine::playTrack(const Track &track, const QList<Track> &queue,
     m_context = queue;
     m_contextName = contextName;
     m_contextIndex = -1; // recomputed by loadAndPlay() once the track is loaded
+    markStateDirty();
     if (m_shuffle)
         rebuildShuffleBag();
 
@@ -78,6 +92,7 @@ void PlaybackEngine::loadAndPlay(const Track &track, bool markPlayed)
 
     if (markPlayed && m_model)
         m_model->markPlayed(track.id);
+    markStateDirty();
 }
 
 void PlaybackEngine::togglePlay()
@@ -91,6 +106,7 @@ void PlaybackEngine::togglePlay()
         m_player->play();
         emit playingChanged(true);
     }
+    markStateDirty();
 }
 
 void PlaybackEngine::stop()
@@ -103,6 +119,7 @@ void PlaybackEngine::seek(qint64 ms)
 {
     if (m_currentTrackId == 0) return;
     m_player->setPosition(ms);
+    markStateDirty();
 }
 
 const QList<Track> &PlaybackEngine::activeContext() const
@@ -243,6 +260,7 @@ void PlaybackEngine::setShuffle(bool on)
         m_shufflePos = 0;
     }
     emit shuffleChanged(m_shuffle);
+    markStateDirty();
 }
 
 void PlaybackEngine::setRepeatMode(RepeatMode mode)
@@ -250,6 +268,7 @@ void PlaybackEngine::setRepeatMode(RepeatMode mode)
     if (m_repeat == mode) return;
     m_repeat = mode;
     emit repeatModeChanged(m_repeat);
+    markStateDirty();
 }
 
 void PlaybackEngine::cycleRepeatMode()
@@ -268,6 +287,7 @@ void PlaybackEngine::setVolume(double volume01)
     volume01 = qBound(0.0, volume01, 1.0);
     m_audio->setVolume(volume01);
     emit volumeChanged(volume01);
+    markStateDirty();
 }
 
 double PlaybackEngine::volume() const
@@ -280,6 +300,7 @@ void PlaybackEngine::setMuted(bool muted)
     if (m_audio->isMuted() == muted) return;
     m_audio->setMuted(muted);
     emit mutedChanged(muted);
+    markStateDirty();
 }
 
 bool PlaybackEngine::isMuted() const
@@ -297,6 +318,7 @@ void PlaybackEngine::enqueue(const Track &track)
     }
     m_userQueue.append(track);
     emit queueChanged();
+    markStateDirty();
 }
 
 void PlaybackEngine::removeFromQueue(int index)
@@ -304,6 +326,7 @@ void PlaybackEngine::removeFromQueue(int index)
     if (index < 0 || index >= m_userQueue.size()) return;
     m_userQueue.removeAt(index);
     emit queueChanged();
+    markStateDirty();
 }
 
 bool PlaybackEngine::takeFromQueue(int index, Track &out)
@@ -311,6 +334,7 @@ bool PlaybackEngine::takeFromQueue(int index, Track &out)
     if (index < 0 || index >= m_userQueue.size()) return false;
     out = m_userQueue.takeAt(index);
     emit queueChanged();
+    markStateDirty();
     return true;
 }
 
@@ -319,6 +343,7 @@ void PlaybackEngine::clearUserQueue()
     if (m_userQueue.isEmpty()) return;
     m_userQueue.clear();
     emit queueChanged();
+    markStateDirty();
 }
 
 void PlaybackEngine::reorderUserQueue(int from, int to)
@@ -327,6 +352,7 @@ void PlaybackEngine::reorderUserQueue(int from, int to)
         return;
     m_userQueue.move(from, to);
     emit queueChanged();
+    markStateDirty();
 }
 
 QList<Track> PlaybackEngine::upcomingContext() const
@@ -376,6 +402,11 @@ void PlaybackEngine::onPlaybackStateChanged(int /*state*/)
 
 // --- Persistence --------------------------------------------------------------
 
+void PlaybackEngine::markStateDirty()
+{
+    m_stateDirty = true;
+}
+
 void PlaybackEngine::persistState()
 {
     Database::PlaybackState s;
@@ -386,8 +417,13 @@ void PlaybackEngine::persistState()
     s.shuffle    = m_shuffle;
     s.repeatMode = static_cast<int>(m_repeat);
 
+    // Product: if the user never clicked a track this session, m_context is
+    // empty but playback still walks activeContext() (library fallback).
+    // Persist that effective queue so the fila survives restart.
     s.contextIds.clear();
-    for (const auto &t : m_context)
+    const QList<Track> &ctx =
+        (m_context.isEmpty() && m_currentTrackId != 0) ? activeContext() : m_context;
+    for (const auto &t : ctx)
         s.contextIds.append(t.id);
 
     s.userQueueIds.clear();
@@ -397,7 +433,10 @@ void PlaybackEngine::persistState()
     s.contextIndex = m_contextIndex;
     s.contextName  = m_contextName;
 
+    qDebug() << "persistState track" << s.trackId << "pos" << s.posMs
+             << "vol" << s.volume << "ctx" << s.contextIds.size();
     Database::instance().saveState(s);
+    m_stateDirty = false;
 }
 
 void PlaybackEngine::restoreSession()
@@ -427,9 +466,17 @@ void PlaybackEngine::restoreSession()
     if (!m_userQueue.isEmpty() || !m_context.isEmpty())
         emit queueChanged();
 
-    if (s.trackId == 0) return;
+    if (s.trackId == 0) {
+        m_stateDirty = false;
+        qDebug() << "restoreSession empty vol" << s.volume;
+        return;
+    }
     Track *t = m_model->findTrack(s.trackId);
-    if (!t) return;
+    if (!t) {
+        m_stateDirty = false;
+        qDebug() << "restoreSession missing track" << s.trackId;
+        return;
+    }
 
     m_currentTrackId = t->id;
     m_currentTrack   = *t;
@@ -448,4 +495,7 @@ void PlaybackEngine::restoreSession()
 
     emit trackChanged(m_currentTrackId);
     emit playingChanged(false);
+    m_stateDirty = false;
+    qDebug() << "restoreSession track" << m_currentTrackId << "pos" << m_pendingSeekMs
+             << "vol" << s.volume << "ctx" << m_context.size();
 }

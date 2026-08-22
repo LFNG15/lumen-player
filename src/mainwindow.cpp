@@ -21,6 +21,8 @@
 #include <QIcon>
 #include <QSplitter>
 #include <QCloseEvent>
+#include <QGuiApplication>
+#include <QSessionManager>
 #include <QMenu>
 #include <QButtonGroup>
 #include <QRadioButton>
@@ -311,6 +313,10 @@ MainWindow::MainWindow(QWidget *parent)
         m_playerBar->persistState();
         if (m_nowPlaying)
             m_nowPlaying->setEnabled(false);
+    });
+    // Windows logoff/shutdown: closeEvent and aboutToQuit may both be skipped.
+    connect(qApp, &QGuiApplication::commitDataRequest, this, [this](QSessionManager &) {
+        m_playerBar->persistState();
     });
 
     // Resume the last session: same track, same position, paused.
