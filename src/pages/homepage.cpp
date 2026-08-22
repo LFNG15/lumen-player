@@ -17,6 +17,8 @@
 #include <QListView>
 #include <QWheelEvent>
 #include "coverwidget.h"
+#include "greeting.h"
+#include <QRandomGenerator>
 
 // A shelf QListView never scrolls itself — wheel events pass through to the
 // page's outer QScrollArea instead of getting stuck in a (possibly slightly
@@ -247,8 +249,10 @@ void HomePage::refresh(int currentTrackId, bool isPlaying) {
     }
 
     // Greeting
-    int hour = QTime::currentTime().hour();
-    QString greeting = hour < 12 ? Lang::tr("Bom dia") : (hour < 18 ? Lang::tr("Boa tarde") : Lang::tr("Boa noite"));
+    const int hour = QTime::currentTime().hour();
+    const int nVar = greetingVariantCount(hour);
+    const int variant = QRandomGenerator::global()->bounded(qMax(1, nVar));
+    const QString greeting = Lang::tr(greetingPtFor(hour, variant));
     auto *greetLabel = new QLabel(greeting);
     greetLabel->setFont(Theme::titleFont(28));
     lumen::design::StyleSheet::apply(greetLabel, QString("color: %1; background: transparent; padding-bottom: 8px;").arg(Theme::text().name()));

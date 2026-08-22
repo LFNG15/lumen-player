@@ -68,12 +68,29 @@ const QHash<QString, QString> &enDict()
         {QStringLiteral("Adicione músicas para começar a ouvir"), QStringLiteral("Add songs to start listening")},
         {QStringLiteral("Não foi possível reproduzir esta faixa"), QStringLiteral("Could not play this track")},
         {QStringLiteral("Atualizando ferramenta de download…"), QStringLiteral("Updating download tool…")},
+        {QStringLiteral("Curtir"), QStringLiteral("Like")},
+        {QStringLiteral("Descurtir"), QStringLiteral("Unlike")},
         {QStringLiteral("Fila de reprodução"), QStringLiteral("Playback queue")},
         {QStringLiteral("Silenciar"), QStringLiteral("Mute")},
         {QStringLiteral("Ativar som"), QStringLiteral("Unmute")},
         {QStringLiteral("Bom dia"), QStringLiteral("Good morning")},
         {QStringLiteral("Boa tarde"), QStringLiteral("Good afternoon")},
         {QStringLiteral("Boa noite"), QStringLiteral("Good evening")},
+        {QStringLiteral("Boa madrugada! Insônia ou maratona musical?"), QStringLiteral("Up late! Insomnia or a music marathon?")},
+        {QStringLiteral("Madrugando, hein? A trilha sonora te acompanha."), QStringLiteral("Burning the midnight oil, huh? Here's a soundtrack.")},
+        {QStringLiteral("Boa madrugada. O volume baixo também vale."), QStringLiteral("Late night. Quiet volume still counts.")},
+        {QStringLiteral("Bom dia! Bora escolher a trilha do dia?"), QStringLiteral("Good morning! Shall we pick today's soundtrack?")},
+        {QStringLiteral("Bom dia. Café na mão, música no ar."), QStringLiteral("Good morning. Coffee in hand, music in the air.")},
+        {QStringLiteral("Bom dia! Que a primeira faixa dê o tom."), QStringLiteral("Good morning! Let the first track set the mood.")},
+        {QStringLiteral("Boa tarde! Continua o som aí?"), QStringLiteral("Good afternoon! Keeping the music going?")},
+        {QStringLiteral("Boa tarde. Uma playlist pra acompanhar a tarde."), QStringLiteral("Good afternoon. A playlist to carry the rest of the day.")},
+        {QStringLiteral("Boa tarde! Hora boa pra descobrir uma faixa nova."), QStringLiteral("Good afternoon! Good time to find a new track.")},
+        {QStringLiteral("Boa noite! Relaxa que a fila tá pronta."), QStringLiteral("Good evening! Relax, the queue's ready.")},
+        {QStringLiteral("Boa noite. Deixa o vinil girar."), QStringLiteral("Good evening. Let the vinyl spin.")},
+        {QStringLiteral("Boa noite! Qual o clima de hoje?"), QStringLiteral("Good evening! What's the mood tonight?")},
+        {QStringLiteral("Já é quase madrugada, hein…"), QStringLiteral("It's almost late-night o'clock…")},
+        {QStringLiteral("Boa noite — ou já é quase madrugada?"), QStringLiteral("Good evening — or is it already late?")},
+        {QStringLiteral("Tá tarde, mas a próxima faixa ainda cabe."), QStringLiteral("It's late, but there's room for one more track.")},
         {QStringLiteral("Sua biblioteca está vazia"), QStringLiteral("Your library is empty")},
         {QStringLiteral("Adicione seus arquivos de áudio para começar"), QStringLiteral("Add your audio files to get started")},
         {QStringLiteral("Adicionar Músicas"), QStringLiteral("Add Songs")},
@@ -255,6 +272,11 @@ QString LanguageManager::tr(const QString &pt) const
         return pt;
     const auto it = enDict().constFind(pt);
     return it == enDict().cend() ? pt : it.value();
+}
+
+bool englishDictContains(const QString &pt)
+{
+    return enDict().contains(pt);
 }
 
 void LanguageManager::bind(QObject *owner, std::function<void()> reapply)

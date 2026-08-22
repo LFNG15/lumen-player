@@ -112,6 +112,7 @@ set(PROJECT_HEADERS
     src/widgets/lang.h
     src/widgets/coverwidget.h
     src/widgets/textutils.h
+    src/widgets/greeting.h
 )
 
 qt_add_executable(LumenMusic
@@ -320,6 +321,10 @@ if(LUMEN_BUILD_TESTS)
 
     lumen_add_test(test_textutils
         tests/test_textutils.cpp)
+
+    lumen_add_test(test_greeting
+        tests/test_greeting.cpp
+        src/design/i18n.cpp)
 
     lumen_add_test(test_position_gap
         tests/test_position_gap.cpp)
