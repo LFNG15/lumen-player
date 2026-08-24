@@ -413,6 +413,44 @@ bool Migrator::migrateTo2(QSqlDatabase &db)
     return recordMigration(db, 2);
 }
 
+// user_version 2 → 3: bookkeeping for LAN sync with the mobile app.
+//
+// Additive only: no existing table is touched. `tracks.id` and `playlists.id`
+// are AUTOINCREMENT, so the phone can key off them directly — no per-row UUID
+// is needed. `sync_meta` holds the server identity and the clientKey→playlist
+// map that makes the phone's push idempotent.
+bool Migrator::migrateTo3(QSqlDatabase &db)
+{
+    if (!execSql(db, QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS sync_meta ("
+            "  key   TEXT PRIMARY KEY,"
+            "  value TEXT NOT NULL"
+            ")")))
+        return false;
+
+    if (!execSql(db, QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS sync_devices ("
+            "  device_id    TEXT PRIMARY KEY,"
+            "  name         TEXT NOT NULL DEFAULT '',"
+            // Only the hash is stored: a leaked database must not hand out
+            // working tokens.
+            "  token_hash   TEXT NOT NULL,"
+            "  created_at   INTEGER NOT NULL DEFAULT 0,"
+            "  last_sync_at INTEGER NOT NULL DEFAULT 0"
+            ")")))
+        return false;
+
+    // Marks playlists adopted from a phone, so the desktop knows the phone owns
+    // their membership (ownership-by-origin rule).
+    if (!columnExists(db, QStringLiteral("playlists"), QStringLiteral("origin_device"))) {
+        if (!execSql(db, QStringLiteral(
+                "ALTER TABLE playlists ADD COLUMN origin_device TEXT NOT NULL DEFAULT ''")))
+            return false;
+    }
+
+    return recordMigration(db, 3);
+}
+
 bool Migrator::run(QSqlDatabase &db, const QString &dbPath)
 {
     g_lastError.clear();
@@ -493,6 +531,8 @@ bool Migrator::run(QSqlDatabase &db, const QString &dbPath)
     if (!applyOne(0, 1, &Migrator::migrateTo1))
         return false;
     if (!applyOne(1, 2, &Migrator::migrateTo2))
+        return false;
+    if (!applyOne(2, 3, &Migrator::migrateTo3))
         return false;
 
     qInfo() << "Migrator: upgraded schema to user_version"

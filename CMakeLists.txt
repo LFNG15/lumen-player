@@ -70,6 +70,13 @@ set(PROJECT_SOURCES
     src/tools/ytdlp_bootstrap.cpp
     src/widgets/vinylwidget.cpp
     src/widgets/clickableslider.cpp
+    src/sync/pairing.cpp
+    src/sync/library_snapshot.cpp
+    src/sync/merge_service.cpp
+    src/sync/http_server.cpp
+    src/sync/discovery_responder.cpp
+    src/sync/sync_server.cpp
+    src/sync/sync_dialog.cpp
 )
 
 set(PROJECT_HEADERS
@@ -113,6 +120,13 @@ set(PROJECT_HEADERS
     src/widgets/coverwidget.h
     src/widgets/textutils.h
     src/widgets/greeting.h
+    src/sync/pairing.h
+    src/sync/library_snapshot.h
+    src/sync/merge_service.h
+    src/sync/http_server.h
+    src/sync/discovery_responder.h
+    src/sync/sync_server.h
+    src/sync/sync_dialog.h
 )
 
 qt_add_executable(LumenMusic
@@ -131,6 +145,7 @@ target_include_directories(LumenMusic PRIVATE
     src/models
     src/platform
     src/tools
+    src/sync
 )
 
 target_link_libraries(LumenMusic PRIVATE
@@ -301,7 +316,7 @@ if(LUMEN_BUILD_TESTS)
     function(lumen_add_test name)
         add_executable(${name} ${ARGN})
         target_include_directories(${name} PRIVATE
-            src src/database src/design src/models src/widgets src/player src/tools)
+            src src/database src/design src/models src/widgets src/player src/tools src/sync)
         target_link_libraries(${name} PRIVATE
             Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Test)
         if(MSVC)
@@ -360,6 +375,41 @@ if(LUMEN_BUILD_TESTS)
 
     lumen_add_test(test_ytdlp_version
         tests/test_ytdlp_version.cpp)
+
+    # --- LAN sync ---------------------------------------------------------
+    lumen_add_test(test_sync_pairing
+        tests/test_sync_pairing.cpp
+        src/sync/pairing.cpp)
+
+    lumen_add_test(test_sync_http
+        tests/test_sync_http.cpp
+        src/sync/http_server.cpp)
+    target_link_libraries(test_sync_http PRIVATE Qt6::Network)
+
+    lumen_add_test(test_sync_snapshot
+        tests/test_sync_snapshot.cpp
+        src/sync/library_snapshot.cpp
+        src/database/migrator.cpp)
+    target_link_libraries(test_sync_snapshot PRIVATE Qt6::Network)
+
+    lumen_add_test(test_sync_merge
+        tests/test_sync_merge.cpp
+        src/sync/merge_service.cpp
+        src/sync/library_snapshot.cpp
+        src/database/migrator.cpp)
+    target_link_libraries(test_sync_merge PRIVATE Qt6::Network)
+
+    # End-to-end: pair → library → file (+resume) → push → revoke.
+    lumen_add_test(test_sync_server
+        tests/test_sync_server.cpp
+        src/sync/sync_server.cpp
+        src/sync/http_server.cpp
+        src/sync/discovery_responder.cpp
+        src/sync/pairing.cpp
+        src/sync/library_snapshot.cpp
+        src/sync/merge_service.cpp
+        src/database/migrator.cpp)
+    target_link_libraries(test_sync_server PRIVATE Qt6::Network)
 
     lumen_add_test(test_playback_state
         tests/test_playback_state.cpp
