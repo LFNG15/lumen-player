@@ -7,11 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned for 2.1
+### Planned
 
 - TagLib / embedded cover art
 - Album and Artist pages
 - Local discovery shelves (opt-in)
+- QR code in the sync dialog, so pairing does not need the PIN typed by hand
+
+## [2.1.0] - 2026-08-25
+
+Minor release: Lumen Music can now serve your library to the phone over your own Wi-Fi.
+
+### Highlights
+
+- **Sync with [Lumen Music Mobile](https://github.com/Lumen-Connection/lumen-music-mobile).** Turn syncing on from the sidebar, type the PIN on your phone, and your library — playlists, covers, liked songs, play counts — appears there. Audio files travel too, for the playlists you pick on the phone.
+- **Your PC stays the source of truth.** Files and the catalogue only ever go one way: to the phone. Deleting a track here removes it there, file and all. Only light state travels back — likes, play counts, and playlists you created on the phone.
+- **Off by default.** A music player has no business listening on the network until you ask it to. The server runs only while you want it to, and paired devices can be revoked at any time from the same dialog.
+
+### New
+
+- **Sync dialog** — on/off switch, the address to type when automatic discovery is blocked, the pairing PIN, and the list of paired devices with a revoke button.
+- **Pick up where you left off.** The phone can resume the track you were playing here, at the same position.
+
+### Technical
+
+- New `src/sync` module: a minimal HTTP/1.1 server on `QTcpServer` (the Qt kit ships without the optional `QHttpServer` add-on), UDP probe/response discovery, PIN pairing, library snapshot, and an additive merge service.
+- Schema migration to `user_version = 3`: adds `sync_meta` and `sync_devices` plus `playlists.origin_device`. Additive only — no existing table is touched, and the migrator still backs up before running.
+- The server runs on its own thread with its own SQL connection, so serialising the library or streaming a whole track never blocks the interface. A push from the phone reloads the open views: the desktop is no longer the only writer of the database.
+- Only the SHA-256 of a device token is stored, so a leaked `vinil.db` cannot be turned into a working credential. The pairing PIN is burned on success and after five wrong attempts.
+- Six new QTest targets covering pairing, HTTP range requests, the snapshot, the merge rules, and an end-to-end run of the whole server.
+
+### Note
+
+The first time you turn syncing on, Windows Firewall will ask for permission — allow it for **private networks**. There is no TLS on the local network in this version: the connection is authenticated by token instead.
 
 ## [2.0.1] - 2026-08-22
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(LumenMusic
-    VERSION 2.0.1
+    VERSION 2.1.0
     DESCRIPTION "Lumen Music"
     LANGUAGES CXX)
 
