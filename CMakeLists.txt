@@ -399,6 +399,22 @@ if(LUMEN_BUILD_TESTS)
         src/database/migrator.cpp)
     target_link_libraries(test_sync_merge PRIVATE Qt6::Network)
 
+    # Dev tool: runs the sync server headless so the Android client can be
+    # tested end-to-end without driving the GUI. Not shipped.
+    add_executable(sync_probe
+        tools/sync_probe.cpp
+        src/sync/sync_server.cpp
+        src/sync/http_server.cpp
+        src/sync/discovery_responder.cpp
+        src/sync/pairing.cpp
+        src/sync/library_snapshot.cpp
+        src/sync/merge_service.cpp)
+    target_include_directories(sync_probe PRIVATE src src/database src/sync)
+    target_link_libraries(sync_probe PRIVATE Qt6::Core Qt6::Sql Qt6::Network)
+    if(MSVC)
+        target_compile_options(sync_probe PRIVATE /utf-8)
+    endif()
+
     # End-to-end: pair → library → file (+resume) → push → revoke.
     lumen_add_test(test_sync_server
         tests/test_sync_server.cpp
