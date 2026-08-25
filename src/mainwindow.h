@@ -46,6 +46,7 @@ private slots:
     void onTrackPlay(const Track &track);
     void showThemePicker();
     void showLanguagePicker();
+    void showSyncDialog();   // LAN sync with the mobile app
     void onDesignChanged();  // live theme / language — no restart
 
 private:

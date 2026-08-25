@@ -47,6 +47,10 @@ public:
 
     static QString importCoverImage(const QString &sourcePath);
 
+    // Absolute path of vinil.db. The sync server opens its own connection to
+    // this same file from its own thread.
+    static QString databasePath();
+
     // --- Tracks ---
     // Insert a library track. If playlistId > 0, also adds membership and may
     // set owner_playlist_id when the track is new.

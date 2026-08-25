@@ -7,7 +7,9 @@
 #include <QFile>
 #include "database/migrator.h"
 
-// Minimal historical DB shapes → Migrator::run must reach user_version 2.
+// Minimal historical DB shapes → Migrator::run must reach the current schema.
+// Asserting against kSchemaVersion (rather than a literal) keeps these tests
+// honest when a new migration lands.
 class TestMigrator : public QObject {
     Q_OBJECT
 private slots:
@@ -71,7 +73,7 @@ void TestMigrator::emptyLegacyDb()
         db.setDatabaseName(path);
         QVERIFY(db.open());
         QVERIFY2(lumen::Migrator::run(db, path), qPrintable(lumen::Migrator::lastError()));
-        QCOMPARE(userVersion(db), 2);
+        QCOMPARE(userVersion(db), lumen::Migrator::kSchemaVersion);
         QVERIFY(exec(db, QStringLiteral("SELECT 1 FROM playlist_tracks LIMIT 1"))
                 || true); // table may be empty
         QSqlQuery q(db);
@@ -121,7 +123,7 @@ void TestMigrator::prePositionSchema()
         exec(db, QStringLiteral("ALTER TABLE tracks ADD COLUMN position INTEGER DEFAULT 0"));
         exec(db, QStringLiteral("ALTER TABLE folders ADD COLUMN cover_image TEXT DEFAULT ''"));
         QVERIFY2(lumen::Migrator::run(db, path), qPrintable(lumen::Migrator::lastError()));
-        QCOMPARE(userVersion(db), 2);
+        QCOMPARE(userVersion(db), lumen::Migrator::kSchemaVersion);
         QSqlQuery q(db);
         QVERIFY(q.exec(QStringLiteral("SELECT COUNT(*) FROM playlist_tracks")));
         QVERIFY(q.next());
@@ -169,7 +171,7 @@ void TestMigrator::mixedPositionBugShape()
         db.setDatabaseName(path);
         QVERIFY(db.open());
         QVERIFY2(lumen::Migrator::run(db, path), qPrintable(lumen::Migrator::lastError()));
-        QCOMPARE(userVersion(db), 2);
+        QCOMPARE(userVersion(db), lumen::Migrator::kSchemaVersion);
         QSqlQuery q(db);
         QVERIFY(q.exec(QStringLiteral(
             "SELECT track_id, position FROM playlist_tracks "
@@ -208,7 +210,7 @@ void TestMigrator::alreadyV2IsNoop()
             "WITHOUT ROWID")));
         QVERIFY(exec(db, QStringLiteral("PRAGMA user_version = 2")));
         QVERIFY2(lumen::Migrator::run(db, path), qPrintable(lumen::Migrator::lastError()));
-        QCOMPARE(userVersion(db), 2);
+        QCOMPARE(userVersion(db), lumen::Migrator::kSchemaVersion);
         db.close();
     }
     QSqlDatabase::removeDatabase(QStringLiteral("t4"));

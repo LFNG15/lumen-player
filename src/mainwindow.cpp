@@ -5,6 +5,8 @@
 #include "mainwindow.h"
 #include "lang.h"
 #include "theme.h"
+#include "database/database.h"
+#include "sync/sync_dialog.h"
 #include <QShowEvent>
 #include <QEvent>
 #include <QApplication>
@@ -792,7 +794,32 @@ void MainWindow::buildSidebar(QWidget *sidebar) {
     connect(themeBtn, &QPushButton::clicked, this, &MainWindow::showThemePicker);
     footerLayout->addWidget(themeBtn);
 
+    // Sync with the phone. Sits next to language/theme because it is a
+    // preference-like action, not a library page.
+    auto *syncBtn = new QPushButton("");   // Sync glyph (Segoe MDL2)
+    syncBtn->setFixedSize(28, 28);
+    syncBtn->setCursor(Qt::PointingHandCursor);
+    syncBtn->setFont(Theme::iconFont(12));
+    Lang::bindToolTip(syncBtn, QStringLiteral("Sincronizar com o celular"));
+    lumen::design::StyleSheet::apply(syncBtn, QString(
+        "QPushButton { background: transparent; color: %1; border: none; border-radius: 6px; }"
+        "QPushButton:hover { background: " + Theme::hoverBg(0.08) + "; color: %2; }"
+    ).arg(Theme::textMuted().name(), Theme::accent().name()));
+    connect(syncBtn, &QPushButton::clicked, this, &MainWindow::showSyncDialog);
+    footerLayout->addWidget(syncBtn);
+
     layout->addWidget(footerWidget);
+}
+
+void MainWindow::showSyncDialog() {
+    lumen::sync::SyncDialog dlg(Database::instance().databasePath(), this);
+    // A phone's push writes straight into the library, so the views have to be
+    // reloaded when it happens — the desktop is not the only writer any more.
+    connect(&dlg, &lumen::sync::SyncDialog::libraryChangedExternally, this, [this]() {
+        m_model->reload();
+        refreshCurrentPage();
+    });
+    dlg.exec();
 }
 
 void MainWindow::updateNavButtons() {

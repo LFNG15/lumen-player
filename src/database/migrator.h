@@ -8,6 +8,7 @@
 //   0 → legacy v1.x (never set a version)
 //   1 → position normalised to a single ordinal scale with gap 1024  [P0b]
 //   2 → N:N playlist_tracks schema                                  [P2]
+//   3 → LAN sync bookkeeping: sync_meta + sync_devices               [sync]
 //
 // On failure the runner refuses to continue: a half-migrated library is worse
 // than an app that will not open. See ContextProject.md §7.9–7.10.
@@ -15,7 +16,7 @@ namespace lumen {
 
 class Migrator {
 public:
-    static constexpr int kSchemaVersion = 2;
+    static constexpr int kSchemaVersion = 3;
 
     static bool run(QSqlDatabase &db, const QString &dbPath);
 
@@ -33,6 +34,7 @@ private:
 
     static bool migrateTo1(QSqlDatabase &db);  // position ordinal fix
     static bool migrateTo2(QSqlDatabase &db);  // N:N playlists
+    static bool migrateTo3(QSqlDatabase &db);  // LAN sync tables
 };
 
 } // namespace lumen

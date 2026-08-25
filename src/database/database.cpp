@@ -40,7 +40,7 @@ bool Database::open()
 
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(dir);
-    const QString dbPath = dir + QStringLiteral("/vinil.db");
+    const QString dbPath = databasePath();
 
     QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"));
     db.setDatabaseName(dbPath);
@@ -495,6 +495,13 @@ QString Database::playlistDiskPathByName(const QString &name) const
         return playlistDiskPath(q.value(0).toInt());
     // Fallback for not-yet-created playlists: sanitize live name.
     return MediaTools::playlistDir(name);
+}
+
+// The sync server opens its own connection to this same file, on its own thread.
+QString Database::databasePath()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+         + QStringLiteral("/vinil.db");
 }
 
 QString Database::importCoverImage(const QString &sourcePath)
