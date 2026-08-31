@@ -91,11 +91,10 @@ void PlaybackEngine::loadAndPlay(const Track &track, bool markPlayed)
     // think the context is exhausted instead of just paused.
     const int idx = findInContext(track.id);
     if (idx >= 0) m_contextIndex = idx;
+    m_playWhenLoaded = true;
     m_player->setSource(track.audioUrl);
-    m_player->play();
 
     emit trackChanged(m_currentTrackId);
-    emit playingChanged(true);
 
     if (markPlayed && m_model)
         m_model->markPlayed(track.id);
@@ -111,6 +110,13 @@ void PlaybackEngine::togglePlay()
         return;
     }
 
+    if (m_playWhenLoaded) {
+        m_playWhenLoaded = false;
+        emit playingChanged(false);
+        markStateDirty();
+        return;
+    }
+
     if (m_player->mediaStatus() == QMediaPlayer::InvalidMedia
         || m_player->error() != QMediaPlayer::NoError) {
         reportInvalidMedia();
@@ -119,19 +125,17 @@ void PlaybackEngine::togglePlay()
 
     if (m_player->playbackState() == QMediaPlayer::PlayingState) {
         m_player->pause();
-        emit playingChanged(false);
     } else {
         m_player->play();
         applyPendingSeekIfReady();
-        emit playingChanged(true);
     }
     markStateDirty();
 }
 
 void PlaybackEngine::stop()
 {
+    m_playWhenLoaded = false;
     m_player->stop();
-    emit playingChanged(false);
 }
 
 void PlaybackEngine::seek(qint64 ms)
@@ -408,6 +412,13 @@ void PlaybackEngine::onMediaStatusChanged(int status)
 
     applyPendingSeekIfReady();
 
+    // Calling play() in the same turn as setSource() can stall the Qt 6.8
+    // FFmpeg backend on Windows until the user manually seeks.
+    if (st == QMediaPlayer::LoadedMedia && m_playWhenLoaded) {
+        m_playWhenLoaded = false;
+        m_player->play();
+    }
+
     if (st == QMediaPlayer::InvalidMedia)
         reportInvalidMedia();
 
@@ -424,8 +435,10 @@ void PlaybackEngine::onMediaStatusChanged(int status)
 
 void PlaybackEngine::onPlaybackStateChanged(int state)
 {
-    if (state == static_cast<int>(QMediaPlayer::PlayingState))
+    const bool playing = state == static_cast<int>(QMediaPlayer::PlayingState);
+    if (playing)
         applyPendingSeekIfReady();
+    emit playingChanged(playing);
 }
 
 void PlaybackEngine::applyPendingSeekIfReady()
@@ -448,10 +461,8 @@ void PlaybackEngine::startPendingRestore()
         reportInvalidMedia();
         return;
     }
+    m_playWhenLoaded = true;
     m_player->setSource(m_currentTrack.audioUrl);
-    m_player->play();
-    applyPendingSeekIfReady();
-    emit playingChanged(true);
     markStateDirty();
 }
 

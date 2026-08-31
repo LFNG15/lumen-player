@@ -117,6 +117,9 @@ private:
     QTimer *m_persistTimer = nullptr;
     bool    m_stateDirty   = false;
     bool    m_restorePending = false;
+    // setSource() loads asynchronously. Keep the start request until the
+    // FFmpeg backend has reported the new source as ready.
+    bool    m_playWhenLoaded = false;
     bool    m_errorNotified  = false;
 };
 
